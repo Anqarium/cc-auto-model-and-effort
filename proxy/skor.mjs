@@ -2,14 +2,21 @@
 // kategori başına tavanı olan kural puanları toplanır; Türkçe ve İngilizce kalıplar birlikte aranır.
 // Saf fonksiyon: I/O yok, aynı girdi her zaman aynı sonucu verir.
 
+// Regex'ler yalnızca ilk bu kadar karaktere uygulanır: bazı kalıplar (dosya yolu) uzun girdide
+// karesel yavaşlar ve skorlama proxy'nin event-loop'unda senkron çalışır. Uzunluk ayrıca ölçülür.
+const TARAMA_SINIRI = 4000;
+
 const say = (metin, re) => (metin.match(re) ?? []).length;
 // search() lastIndex'i kullanmaz; g bayraklı regex ile test() ardışık çağrılarda yanlış sonuç verirdi.
 const farkli = (metin, kaliplar) => kaliplar.filter((re) => metin.search(re) >= 0).length;
 
-// Kelime başı Unicode-farkında sınır + sonda ek toleransı (Türkçe ekler: mimarisi, güvenliği).
-// JS'te \b yalnızca ASCII bilir; "çöküyor" gibi kelimeleri kaçırır, bu yüzden lookbehind kullanılır.
-const kok = (...kelimeler) =>
-  new RegExp(String.raw`(?<![\p{L}\p{N}_])(?:${kelimeler.join("|")})\p{L}*`, "giu");
+// JS'te \b yalnızca ASCII bilir ("çöküyor", "güvenlik" kaçar); bu yüzden Unicode lookaround kullanılır.
+const SOL = String.raw`(?<![\p{L}\p{N}_])`;
+const SAG = String.raw`(?![\p{L}\p{N}_])`;
+// Kök eşleşmesi: kelime başında sınır, sonda her ek kabul (mimarisi, güvenliği).
+const kok = (...kelimeler) => new RegExp(String.raw`${SOL}(?:${kelimeler.join("|")})\p{L}*`, "giu");
+// Tam kelime: iki uçta sınır; ekler kalıbın içinde açıkça yazılır ("bul" → "bulut" eşleşmez).
+const tam = (...kelimeler) => new RegExp(`${SOL}(?:${kelimeler.join("|")})${SAG}`, "giu");
 
 const KOD_KALIPLARI = /\b(function|class|def|import|const|async|await|interface|SELECT|return|struct)\b/g;
 const DOSYA_YOLU = /\b[\w./\\-]+\.(mjs|cjs|js|jsx|ts|tsx|py|go|rs|java|cs|cpp|c|rb|php|json|ya?ml|toml|sql|md|ps1|sh)\b/gi;
@@ -33,7 +40,7 @@ const AGIR = [
 ];
 
 const AKIL = [
-  kok("neden", "niçin", "why"),
+  tam("neden", "niçin", "why"), // kök değil: "bu nedenle" bağlacı eşleşmesin
   kok("analiz", "incele", "araştır", "değerlendir", "karşılaştır", "analy[sz]e", "investigate", "compare", "evaluate"),
   kok("strateji", "trade-?off", "avantaj", "dezavantaj", "alternatif", "seçenek"),
   kok("adım adım", "step by step", "planla", "yol haritası", "roadmap"),
@@ -49,8 +56,13 @@ const ALAN = [
   kok("finansal", "hukuki", "tıbbi", "medical", "legal", "financial"),
 ];
 
-// Kolay işlere işaret eden kısa, mekanik istekler (puanı düşürür).
-const KOLAY = kok("yeniden adlandır", "rename", "typo", "yazım hatası", "listele", "göster", "nedir", "ne demek", "oku", "bul", "nerede", "hangi", "format", "biçimlendir", "commit", "push", "çevir", "translate", "özetle");
+// Kolay işlere işaret eden kısa, mekanik istekler. Tam kelime + açık ekler: "bulut", "okul", "gösterge" eşleşmez.
+const KOLAY = tam(
+  String.raw`yeniden adlandır\p{L}*`, String.raw`rename\p{L}*`, "typos?", String.raw`yazım hata\p{L}*`,
+  String.raw`listele\p{L}*`, "göster(?:ir|ebilir|sene|in)?", "nedir", "ne demek", "oku(?:r|sana|yabilir)?",
+  "bul(?:ur|sana|abilir)?", "nerede", "hangi(?:si)?", String.raw`format(?:la\p{L}*)?`, String.raw`biçimlendir\p{L}*`,
+  String.raw`commit\p{L}*`, String.raw`push\p{L}*`, String.raw`çevir(?:i|ir|sene)?`, "translate", String.raw`özetle\p{L}*`
+);
 
 const SEVIYELER = [
   [5, "trivial"],
@@ -65,7 +77,9 @@ export function seviyeBul(skor) {
 }
 
 export function skorla(prompt) {
-  const metin = String(prompt ?? "");
+  const tamMetin = String(prompt ?? "");
+  const metin = tamMetin.slice(0, TARAMA_SINIRI);
+  const uzunluk = tamMetin.length;
   const kategoriler = {
     kod: Math.min(
       25,
@@ -80,12 +94,14 @@ export function skorla(prompt) {
     matematik: Math.min(20, farkli(metin, MATEMATIK) * 6),
     agir: Math.min(44, farkli(metin, AGIR) * 22),
     akil: Math.min(25, farkli(metin, AKIL) * 5 + Math.min(5, say(metin, /^\s*\d+[.)]\s+\S/gm)) * 2),
-    ayrinti:
-      metin.length > 2000 ? 15 : metin.length > 1000 ? 10 : metin.length > 400 ? 6 : metin.length > 150 ? 3 : 0,
+    ayrinti: uzunluk > 2000 ? 15 : uzunluk > 1000 ? 10 : uzunluk > 400 ? 6 : uzunluk > 150 ? 3 : 0,
     alan: Math.min(10, farkli(metin, ALAN) * 4),
   };
 
-  const kolayIsaret = metin.length <= 250 ? Math.min(2, say(metin, KOLAY)) : 0;
+  // Kolay işareti yalnızca kısa ve ağır/alan sinyali olmayan prompt'ta sayılır:
+  // "bul ve düzelt: kök nedeni" gibi bir istek "bul" yüzünden ucuz modele düşmemeli.
+  const kolayOlabilir = uzunluk <= 250 && kategoriler.agir === 0 && kategoriler.alan === 0;
+  const kolayIsaret = kolayOlabilir ? Math.min(2, say(metin, KOLAY)) : 0;
   const toplam = Object.values(kategoriler).reduce((a, b) => a + b, 0) - kolayIsaret * 8;
   const skor = Math.max(0, Math.min(100, toplam));
 

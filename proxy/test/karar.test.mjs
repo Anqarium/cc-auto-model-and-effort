@@ -1,18 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MODELLER, Oturumlar, gercekPrompt, kararVer, uygula } from "../karar.mjs";
+import { MODELLER, Oturumlar, gercekPrompt, kararVer, pasiflestir, uygula } from "../karar.mjs";
 
 const cfg = { yonlendirilecek: [MODELLER.sonnet], dusurmeTokenSiniri: 30000 };
 const arac = [{ name: "Bash" }];
 const kullanici = (metin) => ({ role: "user", content: [{ type: "text", text: metin }] });
 const gövde = (messages, ek = {}) => ({ model: MODELLER.sonnet, tools: arac, messages, ...ek });
+const ana = (oturumId = "s", promptId) => ({ oturumId, sinif: "main", promptId });
+const aracTuru = [
+  { role: "assistant", content: [{ type: "tool_use", id: "1", name: "Bash", input: {} }] },
+  { role: "user", content: [{ type: "tool_result", tool_use_id: "1", content: "çıktı" }] },
+];
 
-test("gercekPrompt: araç sonucu ve system-reminder bloklarını atlar", () => {
+test("gercekPrompt: araç sonucu, system-reminder ve task-notification bloklarını atlar", () => {
   const messages = [
     kullanici("mimari tasarım yap"),
-    { role: "assistant", content: [{ type: "tool_use", id: "1", name: "Bash", input: {} }] },
-    { role: "user", content: [{ type: "tool_result", tool_use_id: "1", content: "ok" }] },
+    ...aracTuru,
     { role: "user", content: [{ type: "text", text: "<system-reminder>not</system-reminder>" }] },
+    { role: "user", content: [{ type: "text", text: "<task-notification>ajan bitti</task-notification>" }] },
   ];
   assert.deepEqual(gercekPrompt(messages), { index: 0, text: "mimari tasarım yap" });
 });
@@ -28,75 +33,109 @@ test("gercekPrompt: system-reminder ile karışık mesajda yalnızca kullanıcı
   assert.equal(gercekPrompt([m]).text, "yeniden adlandır");
 });
 
-test("zor prompt opus'a yönlenir, kolay prompt haiku'ya", () => {
+test("zor prompt opus'a, açık kolay işaretli prompt haiku'ya", () => {
   const o = new Oturumlar();
-  const zor = kararVer(gövde([kullanici("bu servisin mimari tasarımını yap")]), "s1", o, cfg);
-  assert.equal(zor.model, MODELLER.opus);
-  const kolay = kararVer(gövde([kullanici("bu fonksiyonu yeniden adlandır")]), "s2", o, cfg);
-  assert.equal(kolay.model, MODELLER.haiku);
-  assert.equal(kolay.effort, "low");
+  assert.equal(kararVer(gövde([kullanici("bu servisin mimari tasarımını yap")]), ana("s1"), o, cfg).model, MODELLER.opus);
+  const kolay = kararVer(gövde([kullanici("bu fonksiyonu yeniden adlandır")]), ana("s2"), o, cfg);
+  assert.deepEqual([kolay.model, kolay.effort], [MODELLER.haiku, "low"]);
 });
 
-test("ajan döngüsünde aynı prompt için karar sabit kalır", () => {
+test("sinyalsiz prompt ucuz modele inmez: sonnet/medium", () => {
+  const o = new Oturumlar();
+  for (const [i, p] of ["Implement the feature described in the issue", "ödeme servisinde idempotency nasıl sağlarız"].entries()) {
+    const k = kararVer(gövde([kullanici(p)]), ana(`s${i}`), o, cfg);
+    assert.deepEqual([k.model, k.effort], [MODELLER.sonnet, "medium"], p);
+  }
+});
+
+test("istek sınıfı: yalnızca main yönlendirilir", () => {
+  const o = new Oturumlar();
+  const b = gövde([kullanici("mimari tasarım yap")]);
+  for (const sinif of ["subagent", "compaction", "auxiliary", "workflow"]) {
+    assert.deepEqual(kararVer(b, { oturumId: "s", sinif }, o, cfg), { atla: true, sebep: `sinif:${sinif}` });
+  }
+  assert.equal(kararVer(b, ana(), o, cfg).model, MODELLER.opus);
+});
+
+test("başlıklar yoksa yedek sezgi: alt ajan kimliği ve araçsız istek atlanır", () => {
+  const o = new Oturumlar();
+  const m = [kullanici("mimari tasarım yap")];
+  assert.equal(kararVer(gövde(m), { oturumId: "s", ajanId: "a1" }, o, cfg).sebep, "alt-ajan");
+  assert.equal(kararVer({ model: MODELLER.sonnet, messages: m }, { oturumId: "s" }, o, cfg).sebep, "arac-yok");
+  assert.equal(kararVer(gövde(m), { oturumId: "s" }, o, cfg).model, MODELLER.opus);
+});
+
+test("ROUTE_FROM dışındaki model atlanır ve sebebi söylenir", () => {
+  const k = kararVer(gövde([kullanici("x")], { model: MODELLER.opus }), ana(), new Oturumlar(), cfg);
+  assert.deepEqual(k, { atla: true, sebep: `model:${MODELLER.opus}` });
+});
+
+test("aynı prompt-id boyunca karar sabit kalır (ajan döngüsü)", () => {
   const o = new Oturumlar();
   const ilk = [kullanici("bu servisin mimari tasarımını yap")];
-  const k1 = kararVer(gövde(ilk), "s", o, cfg);
-  const donguMesajlari = [
-    ...ilk,
-    { role: "assistant", content: [{ type: "tool_use", id: "1", name: "Bash", input: {} }] },
-    { role: "user", content: [{ type: "tool_result", tool_use_id: "1", content: "çıktı" }] },
-  ];
-  const k2 = kararVer(gövde(donguMesajlari), "s", o, cfg);
+  const k1 = kararVer(gövde(ilk), ana("s", "p1"), o, cfg);
+  const k2 = kararVer(gövde([...ilk, ...aracTuru]), ana("s", "p1"), o, cfg);
   assert.equal(k2.model, k1.model);
   assert.equal(k2.sebep, "ayni-prompt");
 });
 
-test("kısa devam prompt'u önceki kararı sürdürür", () => {
+test("rewind: aynı indekse gelen farklı prompt yeniden skorlanır (prompt-id yokken)", () => {
+  const o = new Oturumlar();
+  kararVer(gövde([kullanici("bu servisin mimari tasarımını yap")]), ana(), o, cfg);
+  const k = kararVer(gövde([kullanici("README'deki yazım hatasını düzelt")]), ana(), o, cfg);
+  assert.equal(k.sebep, "skor");
+  assert.notEqual(k.model, MODELLER.opus);
+});
+
+test("kısa ve sinyalsiz devam önceki kararı sürdürür; kısa ama sinyalli prompt skorlanır", () => {
   const o = new Oturumlar();
   const m1 = [kullanici("bu servisin mimari tasarımını yap")];
-  const k1 = kararVer(gövde(m1), "s", o, cfg);
+  const k1 = kararVer(gövde(m1), ana(), o, cfg);
   const m2 = [...m1, { role: "assistant", content: [{ type: "text", text: "tamam" }] }, kullanici("devam et")];
-  const k2 = kararVer(gövde(m2), "s", o, cfg);
-  assert.equal(k2.model, k1.model);
-  assert.equal(k2.sebep, "kisa-devam");
+  const k2 = kararVer(gövde(m2), ana(), o, cfg);
+  assert.deepEqual([k2.model, k2.sebep], [k1.model, "kisa-devam"]);
+  const m3 = [...m2, { role: "assistant", content: "x" }, kullanici("neden çalışmıyor?")];
+  assert.equal(kararVer(gövde(m3), ana(), o, cfg).sebep, "skor");
 });
 
 test("küçük bağlamda model düşürülür; büyük bağlamda cache korunur", () => {
   const o = new Oturumlar();
-  kararVer(gövde([kullanici("bu servisin mimari tasarımını yap")]), "s", o, cfg);
+  kararVer(gövde([kullanici("bu servisin mimari tasarımını yap")]), ana(), o, cfg);
   const kucuk = [kullanici("x"), { role: "assistant", content: "y" }, kullanici("bu fonksiyonu yeniden adlandır")];
-  assert.equal(kararVer(gövde(kucuk), "s", o, cfg).model, MODELLER.haiku);
+  assert.equal(kararVer(gövde(kucuk), ana(), o, cfg).model, MODELLER.haiku);
 
   const o2 = new Oturumlar();
-  kararVer(gövde([kullanici("bu servisin mimari tasarımını yap")]), "b", o2, cfg);
+  kararVer(gövde([kullanici("bu servisin mimari tasarımını yap")]), ana("b"), o2, cfg);
   const buyuk = [
     { role: "user", content: [{ type: "text", text: "bağlam " + "a".repeat(200000) }] },
     { role: "assistant", content: "y" },
     kullanici("bu fonksiyonu yeniden adlandır"),
   ];
-  const k = kararVer(gövde(buyuk), "b", o2, cfg);
-  assert.equal(k.model, MODELLER.opus);
-  assert.equal(k.sebep, "cache-histerezisi");
-  assert.equal(k.effort, "low"); // model sabit kalsa da effort yine düşer
+  const k = kararVer(gövde(buyuk), ana("b"), o2, cfg);
+  assert.deepEqual([k.model, k.sebep, k.effort], [MODELLER.opus, "cache-histerezisi", "low"]);
 });
 
 test("oturumun ilk isteği büyük bağlamla gelirse (--resume) haiku'ya inilmez", () => {
-  const o = new Oturumlar();
   const buyuk = [
     { role: "user", content: [{ type: "text", text: "bağlam " + "a".repeat(200000) }] },
     { role: "assistant", content: "y" },
     kullanici("bu fonksiyonu yeniden adlandır"),
   ];
-  const k = kararVer(gövde(buyuk), "yeni", o, cfg);
-  assert.equal(k.model, MODELLER.sonnet);
-  assert.equal(k.sebep, "cache-histerezisi");
+  const k = kararVer(gövde(buyuk), ana("yeni"), new Oturumlar(), cfg);
+  assert.deepEqual([k.model, k.sebep], [MODELLER.sonnet, "cache-histerezisi"]);
 });
 
-test("araçsız (arka plan) ve yönlendirilmeyen modeller atlanır", () => {
+test("pasifleştirilen prompt'a dokunulmaz; sonraki prompt yeniden skorlanır", () => {
   const o = new Oturumlar();
-  const m = [kullanici("mimari tasarım yap")];
-  assert.equal(kararVer({ model: MODELLER.sonnet, messages: m }, "s", o, cfg), null);
-  assert.equal(kararVer({ model: MODELLER.haiku, tools: arac, messages: m }, "s", o, cfg), null);
+  const m = [kullanici("bu servisin mimari tasarımını yap")];
+  kararVer(gövde(m), ana("s", "p1"), o, cfg);
+  pasiflestir(o, "s", "red:400");
+  const k = kararVer(gövde([...m, ...aracTuru]), ana("s", "p1"), o, cfg);
+  assert.equal(k.pasif, true);
+  const b = gövde(m);
+  assert.equal(uygula(b, k), false);
+  assert.equal(b.model, MODELLER.sonnet);
+  assert.equal(kararVer(gövde([kullanici("bu fonksiyonu yeniden adlandır")]), ana("s", "p2"), o, cfg).model, MODELLER.haiku);
 });
 
 test("uygula: gövdeyi yeniden yazar, değişmiyorsa false döner", () => {
@@ -104,4 +143,5 @@ test("uygula: gövdeyi yeniden yazar, değişmiyorsa false döner", () => {
   assert.equal(uygula(b, { model: MODELLER.opus, effort: "high" }), true);
   assert.deepEqual(b, { model: MODELLER.opus, output_config: { effort: "high", diger: 1 } });
   assert.equal(uygula(b, { model: MODELLER.opus, effort: "high" }), false);
+  assert.equal(uygula(b, { atla: true, sebep: "x" }), false);
 });

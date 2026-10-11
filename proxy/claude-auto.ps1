@@ -1,35 +1,49 @@
 # claude'u otomatik model/effort yönlendiricisi üzerinden çalıştırır.
-# Router kapalıysa gizli bir süreç olarak başlatır, claude kapanınca durdurur (kendisi başlattıysa).
-# ANTHROPIC_BASE_URL yalnızca bu çalıştırma süresince ayarlanır, sonra eski değerine döner.
+# Her çalıştırma kendi boş portunda kendi router'ını başlatır ve claude kapanınca onu durdurur;
+# böylece aynı anda açık pencereler birbirinin router'ını kapatmaz.
+# ANTHROPIC_BASE_URL ve CLAUDE_CODE_GATEWAY_HINT_HEADERS yalnızca bu çalıştırma süresince ayarlanır.
 # Kullanım: .\proxy\claude-auto.ps1 [claude argümanları]
+
 # Bilerek param() bloğu yok: [Parameter] betiği "gelişmiş" yapar ve PowerShell `-p` gibi claude
 # bayraklarını ortak parametre öneki (-ProgressAction) sanıp reddeder. $args hepsini olduğu gibi alır.
 $ClaudeArgs = @($args)
-
-$port = if ($env:PORT) { $env:PORT } else { 8787 }
 $router = Join-Path $PSScriptRoot 'router.mjs'
-$baslattik = $null
 
-function Dinleniyor { [bool](Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) }
+$dinleyici = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+$dinleyici.Start()
+$port = $dinleyici.LocalEndpoint.Port
+$dinleyici.Stop()
 
-if (-not (Dinleniyor)) {
-    $baslattik = Start-Process node -ArgumentList "`"$router`"" -WindowStyle Hidden -PassThru
-    for ($i = 0; $i -lt 50 -and -not (Dinleniyor); $i++) { Start-Sleep -Milliseconds 100 }
-    if (-not (Dinleniyor)) {
-        if ($baslattik) { Stop-Process -Id $baslattik.Id -Force -ErrorAction SilentlyContinue }
-        throw "Router $port portunda başlatılamadı."
-    }
+function Saglikli {
+    try { (Invoke-RestMethod "http://127.0.0.1:$port/__router" -TimeoutSec 1).router -eq 'cc-auto-model-and-effort' }
+    catch { $false }
 }
 
-# Router'ın yönlendirdiği model (ROUTE_FROM) ile oturum modeli aynı olmalı; kullanıcı vermediyse sonnet.
-if ($ClaudeArgs -notcontains '--model') { $ClaudeArgs = @('--model', 'sonnet') + $ClaudeArgs }
+$hataDosyasi = Join-Path ([IO.Path]::GetTempPath()) "claude-auto-router-$port.err"
+$eski = @{ PORT = $env:PORT; URL = $env:ANTHROPIC_BASE_URL; HINT = $env:CLAUDE_CODE_GATEWAY_HINT_HEADERS }
+$env:PORT = "$port"
+$surec = Start-Process node -ArgumentList "`"$router`"" -WindowStyle Hidden -PassThru -RedirectStandardError $hataDosyasi
+$env:PORT = $eski.PORT
 
-$eskiUrl = $env:ANTHROPIC_BASE_URL
+for ($i = 0; $i -lt 50 -and -not $surec.HasExited -and -not (Saglikli); $i++) { Start-Sleep -Milliseconds 100 }
+if (-not (Saglikli)) {
+    Stop-Process -Id $surec.Id -Force -ErrorAction SilentlyContinue
+    $ayrinti = Get-Content $hataDosyasi -Raw -ErrorAction SilentlyContinue
+    throw "Router $port portunda başlatılamadı. $ayrinti"
+}
+
+# Router yalnızca ROUTE_FROM modelini (varsayılan sonnet) yönlendirir; kullanıcı model vermediyse sonnet ile başla.
+if (-not ($ClaudeArgs | Where-Object { $_ -like '--model*' })) { $ClaudeArgs = @('--model', 'sonnet') + $ClaudeArgs }
+
 $env:ANTHROPIC_BASE_URL = "http://127.0.0.1:$port"
+# İstek sınıfı / prompt kimliği başlıkları; özel base URL'de varsayılan kapalı.
+$env:CLAUDE_CODE_GATEWAY_HINT_HEADERS = '1'
 try {
     & claude @ClaudeArgs
 }
 finally {
-    $env:ANTHROPIC_BASE_URL = $eskiUrl
-    if ($baslattik) { Stop-Process -Id $baslattik.Id -Force -ErrorAction SilentlyContinue }
+    $env:ANTHROPIC_BASE_URL = $eski.URL
+    $env:CLAUDE_CODE_GATEWAY_HINT_HEADERS = $eski.HINT
+    Stop-Process -Id $surec.Id -Force -ErrorAction SilentlyContinue
+    if ((Get-Item $hataDosyasi -ErrorAction SilentlyContinue).Length -eq 0) { Remove-Item $hataDosyasi -ErrorAction SilentlyContinue }
 }
