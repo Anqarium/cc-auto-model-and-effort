@@ -10,7 +10,7 @@ Everything in this repository is in English: code identifiers, comments, UI stri
 
 Make Claude Code pick the model and effort level automatically for each prompt. The user is on a Claude subscription (OAuth), not an API key.
 
-The repo root is a Claude Code plugin (mod): `auto-model-effort`. Through the `turn.step` hook it changes the model/effort of every main-conversation model request inside Claude Code. Installed permanently at user scope (2026-10-11): the root `.claude-plugin/marketplace.json` (`anqarium`) was added as a local marketplace and the plugin is read from this folder; code changes apply in an open session with `/reload-plugins`. Plain `claude` is enough; it routes whatever model the session is on (including after `/model`). `/auto off` stops it for that session only (a new session starts on).
+The repo root is a Claude Code plugin (mod): `auto-model-effort`. Through the `turn.step` hook it changes the model/effort of every main-conversation model request inside Claude Code. Installed permanently at user scope from GitHub (2026-10-11): the marketplace `anqarium` (root `.claude-plugin/marketplace.json`) is added from `https://github.com/Anqarium/cc-auto-model-and-effort.git`, so the plugin runs from Claude Code's cache, not from this folder. Code changes must be committed and pushed, then `claude plugin marketplace update anqarium` and `claude plugin update auto-model-effort@anqarium`, then `/reload-plugins` in an open session. Plain `claude` is enough; it routes whatever model the session is on (including after `/model`). `/auto off` stops it for that session only (a new session starts on).
 
 ## Commands
 
@@ -21,13 +21,13 @@ node --test test/*.test.mjs                       # logic tests (Node)
 claude plugin test .                              # mod tests with the 'claude-code/testing' kit (test/*.test.ts)
 node --test --test-name-pattern "effort" test/select.test.mjs   # one test
 claude plugin validate .                          # validates manifest, marketplace and hooks module
-claude plugin list                                # auto-model-effort@anqarium: "Read from: <this folder>"; token-weather@anqarium (copy from GitHub)
+claude plugin list                                # auto-model-effort@anqarium: "Source: GitHub (cache)"; token-weather@anqarium (copy from GitHub)
 claude plugin marketplace update anqarium         # after marketplace.json changes
 ```
 
 Checking against the real API: `claude -p "<prompt>" --output-format json < /dev/null` → `modelUsage` shows the real model (the mod runs inside Claude Code, so the client knows the real model). To see the outgoing `output_config.effort`, use the observer: `node tools/spike.mjs` in the background, then `ANTHROPIC_BASE_URL=http://127.0.0.1:8787 claude -p ...`; `tools/spike.log` has `body.model` / `body.output_config.effort` (it does not touch the body). Meanwhile tool search is off and the context grows (see below). Run `claude -p "/auto-log"` from PowerShell: Git Bash turns `/auto-log` into a Windows path.
 
-The `anqarium` marketplace (`.claude-plugin/marketplace.json`) lists two plugins: `auto-model-effort` (`"./"`, read from the local folder) and the user's other mod `token-weather` (git URL source `https://github.com/Anqarium/token-weather.git`, private; installing takes a copy from the repo, the source folder is `~/.claude/mods/token-weather`). The source is an HTTPS `url`, not `{"source": "github"}`: with `github`, install fell back to HTTPS but `claude plugin update` cloned over SSH and failed (no SSH key on this machine). Updates are detected by `version`, so bump it in that repo's `plugin.json` before `claude plugin update token-weather@anqarium`. Two marketplaces cannot share a name; the user wants all their plugins under `anqarium`. The `claude-auto` wrapper and its profile function were removed on 2026-10-11 (unneeded once the mod routed every model); the `omni` function in the user's PowerShell profile is theirs, do not touch it.
+The `anqarium` marketplace (`.claude-plugin/marketplace.json`) lists two plugins: `auto-model-effort` (`"./"`, installed from the GitHub clone) and the user's other mod `token-weather` (git URL source `https://github.com/Anqarium/token-weather.git`, private; installing takes a copy from the repo, the source folder is `~/.claude/mods/token-weather`). The source is an HTTPS `url`, not `{"source": "github"}`: with `github`, install fell back to HTTPS but `claude plugin update` cloned over SSH and failed (no SSH key on this machine). Updates are detected by `version`, so bump it in that repo's `plugin.json` before `claude plugin update token-weather@anqarium`. Two marketplaces cannot share a name; the user wants all their plugins under `anqarium`. The `claude-auto` wrapper and its profile function were removed on 2026-10-11 (unneeded once the mod routed every model); the `omni` function in the user's PowerShell profile is theirs, do not touch it.
 
 ## Architecture
 
