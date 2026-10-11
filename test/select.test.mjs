@@ -55,3 +55,10 @@ test("hysteresis: with a large context, no downgrade below the previous or the c
   assert.equal(first.model, MODELS.sonnet);
   assert.equal(decide("bu fonksiyonu yeniden adlandır", { previous, contextTokens: 1000 }).model, MODELS.haiku);
 });
+
+test("effortFor follows the default effort the catalog gives; without it medium / high", () => {
+  const efforts = { sonnet: { base: "high", up: "xhigh" } };
+  assert.deepEqual([10, 31].map((s) => effortFor(MODELS.sonnet, s, efforts)), ["high", "xhigh"]);
+  assert.equal(effortFor(MODELS.opus, 10, efforts), "medium");
+  assert.equal(decide("explain the architecture and root cause of this bug in detail", { triage: 90, efforts: { opus: { base: "low", up: "high" } } }).effort, "high");
+});

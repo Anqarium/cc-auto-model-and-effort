@@ -3,7 +3,7 @@
 // (lib/select.mjs, lib/display.mjs), kept out of the mod code so they can be tested with Node.
 import type { EngineInterface, Register, Timer } from 'claude-code'
 import { MODELS, SEED_IDS, decide, learnModel } from '../lib/select.mjs'
-import { idsFromCatalog } from '../lib/catalog.mjs'
+import { effortsFromCatalog, idsFromCatalog } from '../lib/catalog.mjs'
 import { autoCommand, label, logSummary, statusNotice } from '../lib/display.mjs'
 import { parseTriage, triageRequest } from '../lib/triage.mjs'
 
@@ -20,6 +20,7 @@ const NOTICE_MS = 4000
 
 type Decision = ReturnType<typeof decide>
 type ModelIds = Record<string, string>
+type Efforts = Record<string, { base: string; up: string }>
 
 // Newest full model id seen per family, kept across sessions: turn.step does not resolve aliases, so the routed
 // request needs a real id. Any id the mod sees (session model, subagents, responses) can raise an entry.
@@ -30,14 +31,17 @@ const IDS_KEY = 'modelIds'
 // An unreadable catalog is logged once per session, not on every prompt.
 let catalogErrorLogged = false
 
-async function learnFromCatalog($: EngineInterface, ids: ModelIds): Promise<ModelIds> {
+async function learnFromCatalog($: EngineInterface, ids: ModelIds): Promise<{ ids: ModelIds; efforts: Efforts }> {
+  let efforts: Efforts = {}
   try {
     const home = (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME'))
     const configDir = (await $.env.get('CLAUDE_CONFIG_DIR')) ?? `${home}/.claude`
     const dir = `${configDir}/cache/model-catalog`
     for (const entry of await $.fs.list(dir)) {
       if (entry.kind !== 'file' || !entry.name.endsWith('.json')) continue
-      for (const id of idsFromCatalog(await $.fs.read(`${dir}/${entry.name}`))) ids = await remember($, ids, id)
+      const text = await $.fs.read(`${dir}/${entry.name}`)
+      for (const id of idsFromCatalog(text)) ids = await remember($, ids, id)
+      efforts = { ...efforts, ...effortsFromCatalog(text) }
     }
   } catch (error) {
     if (!catalogErrorLogged) {
@@ -45,7 +49,7 @@ async function learnFromCatalog($: EngineInterface, ids: ModelIds): Promise<Mode
       await record($, { skipped: 'catalog-unreadable', error: String(error) })
     }
   }
-  return ids
+  return { ids, efforts }
 }
 
 async function remember($: EngineInterface, ids: ModelIds, seen: string | undefined): Promise<ModelIds> {
@@ -87,6 +91,8 @@ export const register: Register = on => {
   let decision: Decision | null = null
   let clientModel: string = MODELS.sonnet
   let ids: ModelIds = SEED_IDS
+  // Default effort per family (the catalog's "Recommended" option) and the step above it; empty until the catalog is read.
+  let efforts: Efforts = {}
   // Routes whatever model the session is on; /auto off stops it (this session only).
   let enabled = true
 
@@ -128,7 +134,9 @@ export const register: Register = on => {
     // Empty text is a turn without a typed prompt (a background agent's notification, a continuation):
     // the previous decision stands.
     if (enabled && e.text.trim()) {
-      ids = await learnFromCatalog($, ids)
+      const learned = await learnFromCatalog($, ids)
+      ids = learned.ids
+      efforts = Object.fromEntries(Object.entries(ids).flatMap(([family, id]) => (learned.efforts[id] ? [[family, learned.efforts[id]]] : [])))
       const messages = await $.session.messages()
       // Haiku rates the prompt; a short follow-up after a decision skips the call (the rules handle it), and
       // a failed or unparseable call leaves `triage` undefined, so the rule-based score stands in.
@@ -152,6 +160,7 @@ export const register: Register = on => {
         downgradeLimit: DOWNGRADE_LIMIT,
         triage,
         triageFailed,
+        efforts,
       })
       show($, { decision })
     }
