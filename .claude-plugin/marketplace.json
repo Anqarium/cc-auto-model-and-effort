@@ -13,8 +13,8 @@
     {
       "name": "token-weather",
       "source": {
-        "source": "github",
-        "repo": "Anqarium/token-weather"
+        "source": "url",
+        "url": "https://github.com/Anqarium/token-weather.git"
       },
       "description": "Live context-window fill level shown as a weather report"
     }
