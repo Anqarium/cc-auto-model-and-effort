@@ -9,9 +9,8 @@ import { parseTriage, triageRequest } from '../lib/triage.mjs'
 
 // Above this many conversation tokens the model is not downgraded (the new model would rewrite the cache).
 const DOWNGRADE_LIMIT = 30000
-// Haiku triage: a prompt shorter than this after a first decision is not sent to Haiku; the call is cut at the timeout.
+// Haiku triage: a prompt shorter than this after a first decision is not sent to Haiku. The call has no timeout.
 const SHORT_PROMPT = 25
-const TRIAGE_TIMEOUT_MS = 8000
 // Calibration log in $.store (kept across sessions): the last this-many main-conversation model requests.
 const LOG_KEY = 'decisions'
 const LOG_MAX = 2000
@@ -95,6 +94,8 @@ export const register: Register = on => {
   let efforts: Efforts = {}
   // Routes whatever model the session is on; /auto off stops it (this session only).
   let enabled = true
+  // Why the last prompt's Haiku triage gave no rating (undefined when it did or was skipped); logged with its first step.
+  let triageNote: string | undefined
 
   on('ui.render', { component: 'SessionMode' }, ($, e, next) => {
     const text = notice ?? lasting
@@ -142,16 +143,17 @@ export const register: Register = on => {
       // a failed or unparseable call leaves `triage` undefined, so the rule-based score stands in.
       let triage: number | undefined
       let triageFailed = false
+      triageNote = undefined
       if (!(decision && e.text.trim().length < SHORT_PROMPT)) {
         const r = await $.model.complete({
           model: 'haiku',
           ...triageRequest(e.text),
           maxTokens: 8,
           effort: 'low',
-          timeoutMs: TRIAGE_TIMEOUT_MS,
         })
         triage = r.isAnswered ? parseTriage(r.text) : undefined
         triageFailed = triage === undefined
+        triageNote = !triageFailed ? undefined : !r.isAnswered ? (r.reason === 'api-error' ? `api-error ${r.status ?? 'no-response'}` : r.reason) : `unparseable: ${r.text.slice(0, 40)}`
       }
       decision = decide(e.text, {
         previous: decision,
@@ -204,6 +206,7 @@ export const register: Register = on => {
       level,
       score,
       reason,
+      ...(e.index === 0 && triageNote ? { triageNote } : {}),
       responseModel: u?.model,
       cacheWrite: u?.cache_creation_input_tokens,
       cacheRead: u?.cache_read_input_tokens,
