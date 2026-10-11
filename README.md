@@ -39,6 +39,7 @@ To force a specific model, type `/auto off`: routing stops for that session and 
 
 ```
 node --test test/*.test.mjs
+claude plugin test .
 claude plugin validate .
 ```
 
