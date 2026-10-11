@@ -1,36 +1,14 @@
-// Bir /v1/messages gövdesinden model + effort kararı üretir.
-// Kurallar: (1) yalnızca ana konuşma turlarına dokun, (2) aynı kullanıcı prompt'u boyunca kararı sabit tut,
-// (3) cache'i boşa harcama: büyük bağlamda model düşürme (yükseltme serbest),
-// (4) kanıt yoksa ucuz modele inme: varsayılan sonnet/medium, haiku yalnızca açık "kolay" işaretiyle.
+// Proxy için: bir /v1/messages gövdesinden model + effort kararı üretir.
+// Kurallar: (1) yalnızca ana konuşma turlarına dokun, (2) aynı kullanıcı prompt'u boyunca kararı sabit tut.
+// Model/effort seçiminin kendisi (kanıtsız prompt ucuza inmez, cache histerezisi, kısa devam) secim.mjs'te;
+// Claude Code mod'u (hooks/register.ts) da aynısını kullanır.
 import { createHash } from "node:crypto";
-import { skorla } from "./skor.mjs";
+import { secimYap } from "./secim.mjs";
 
-export const MODELLER = {
-  haiku: "claude-haiku-5-5",
-  sonnet: "claude-sonnet-5-5",
-  opus: "claude-opus-5-5",
-};
-const SIRA = { [MODELLER.haiku]: 0, [MODELLER.sonnet]: 1, [MODELLER.opus]: 2 };
-
-// Seviye -> model. Yanlış ucuz model, yanlış pahalı modelden daha zararlı olduğu için
-// sinyalsiz/az sinyalli prompt sonnet'te kalır; haiku yalnızca açık kolay işaretle (yeniden adlandır, listele...).
-export const ESLEME = {
-  trivial: MODELLER.sonnet,
-  simple: MODELLER.sonnet,
-  moderate: MODELLER.sonnet,
-  complex: MODELLER.opus,
-  expert: MODELLER.opus,
-};
-export const KOLAY_ESLEME = { trivial: MODELLER.haiku };
-
-// Effort skora göre, model başına: medium her modelin varsayılanı olduğu için geniş tutulur;
-// skor eşiği aşınca high. low kullanılmaz.
-export const YUKSEK_EFFORT_ESIGI = { [MODELLER.haiku]: Infinity, [MODELLER.sonnet]: 30, [MODELLER.opus]: 75 };
-export const effortBul = (model, skor) => (skor > (YUKSEK_EFFORT_ESIGI[model] ?? Infinity) ? "high" : "medium");
+export { MODELLER, ESLEME, KOLAY_ESLEME, YUKSEK_EFFORT_ESIGI, effortBul } from "./secim.mjs";
 
 // Claude Code'un kullanıcı adına enjekte ettiği bloklar; gerçek prompt sayılmaz.
 const SISTEM_BLOKLARI = /^\s*<(system-reminder|local-command|command-(name|message|args)|task-notification|bash-(input|stdout|stderr))/;
-const KISA_DEVAM = 25; // sinyalsiz kısa yanıt ("evet", "devam et") önceki kararı sürdürür.
 
 // Mesajlar arasında kullanıcının yazdığı gerçek son prompt (araç sonuçları ve sistem blokları hariç).
 export function gercekPrompt(messages) {
@@ -96,23 +74,12 @@ export function kararVer(body, ipucu, oturumlar, cfg) {
   const onceki = oturumlar.get(ipucu.oturumId);
   if (onceki?.anahtar === anahtar) return { ...onceki.karar, sebep: onceki.karar.pasif ? onceki.karar.sebep : "ayni-prompt" };
 
-  const s = skorla(prompt.text);
-  const hedefModel = (s.sinyaller.includes("kolay-isaret") && KOLAY_ESLEME[s.seviye]) || ESLEME[s.seviye];
-  let karar = { model: hedefModel, skor: s.skor, seviye: s.seviye, sinyaller: s.sinyaller, sebep: "skor" };
-
-  if (onceki && !onceki.karar.pasif && s.skor === 0 && prompt.text.length < KISA_DEVAM) {
-    karar = { ...onceki.karar, sebep: "kisa-devam" };
-  } else {
-    // İlk istekte taban istemcinin istediği model: büyük bağlamla (--resume) başlayan oturum düşürülmez.
-    const simdiki = (!onceki?.karar.pasif && onceki?.karar.model) || body.model;
-    const baglamTokeni = JSON.stringify(body.messages).length / 4;
-    if (SIRA[hedefModel] < SIRA[simdiki] && baglamTokeni > cfg.dusurmeTokenSiniri) {
-      karar = { ...karar, model: simdiki, sebep: "cache-histerezisi" };
-    }
-    // Effort, sonunda hangi model çalışacaksa onun eşiğine göre belirlenir.
-    karar.effort = effortBul(karar.model, s.skor);
-  }
-
+  const karar = secimYap(prompt.text, {
+    onceki: onceki?.karar ?? null,
+    istemciModeli: body.model,
+    baglamTokeni: JSON.stringify(body.messages).length / 4,
+    dusurmeSiniri: cfg.dusurmeTokenSiniri,
+  });
   oturumlar.set(ipucu.oturumId, { anahtar, karar });
   return karar;
 }

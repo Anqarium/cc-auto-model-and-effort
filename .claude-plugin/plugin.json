@@ -1,0 +1,6 @@
+{
+  "name": "auto-model-effort",
+  "version": "0.1.0",
+  "description": "Prompt zorluğuna göre ana oturumun modelini ve effort seviyesini otomatik seçer.",
+  "author": { "name": "Anqarium" }
+}

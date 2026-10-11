@@ -1,16 +1,16 @@
 # cc-auto-model-and-effort
 
-Claude Code'un modelini ve effort seviyesini, girilen prompt'un zorluğuna göre otomatik seçen yerel bir yönlendirici. Claude aboneliği (OAuth) ile çalışır.
+Claude Code'un modelini ve effort seviyesini, girilen prompt'un zorluğuna göre otomatik seçen bir Claude Code eklentisi (mod: `auto-model-effort`). Claude aboneliği (OAuth) ile çalışır; proxy veya arka plan süreci gerekmez.
 
 ## Kullanım
 
-Gereksinim: Node.js 22+ (bağımlılık yok).
+Gereksinim: Claude Code 2.1.296+ (mod API'si erken erişimde).
 
 ```
-.\proxy\claude-auto.ps1
+.\claude-auto.ps1
 ```
 
-Kendi router'ını boş bir portta başlatır, `claude`'u onun üzerinden çalıştırır ve çıkınca durdurur. Her prompt'u 0–100 arası skorlar:
+Bu, `claude --plugin-dir <bu repo> --model sonnet` ile aynıdır: mod yüklü bir oturum açar. Claude'a verdiğin argümanlar (`-c`, `--resume`, `-p` …) aynen geçer. Her prompt 0–100 arası skorlanır:
 
 | Prompt | Skor | Model / effort |
 |---|---|---|
@@ -20,14 +20,8 @@ Kendi router'ını boş bir portta başlatır, `claude`'u onun üzerinden çalı
 | Zor (mimari + tasarım, kök neden + güvenlik…) | 41–75 | Opus / medium |
 | Çok zor ve çok yönlü | 76+ | Opus / high |
 
-Medium her modelin varsayılan effort'u olduğu için en geniş aralığı kaplar; low kullanılmaz.
+Medium her modelin varsayılan effort'u olduğu için en geniş aralığı kaplar; low kullanılmaz. Alt ajanların modeline dokunulmaz. Seçilen model ve effort status line'da görünür: `⚡ auto → Opus 5.5 · high · expert (72)`.
 
-Alt ajan, özetleme (compaction) ve arka plan isteklerine dokunulmaz. Kararlar ve gerçek çalışan model `proxy/router.log` dosyasına yazılır (prompt metni yazılmaz).
+Mod yalnızca Sonnet oturumunu yönlendirir; oturumda `/model` ile başka modele geçersen yönlendirme durur (status line'da `auto kapalı` görünür).
 
-Claude Code'un kendi model göstergesi hep başlattığın modeli (Sonnet) gösterir. Bu yüzden `claude-auto` oturumlarında altta ayrı bir statusline çıkar: `⚡ auto → Opus 5.5 · high · expert (72)`. Gösterilen model, Anthropic'in yanıtında gerçekten dönen modeldir.
-
-Sarmalayıcı, `--model` vermezsen oturumu `sonnet` ile başlatır ve yalnızca o modeli yönlendirir. Claude Pro'da varsayılan model Opus'tur; `--model opus` verirsen ya da oturumda `/model` ile değiştirirsen yönlendirme durur (logda `atlandi` olarak görünür).
-
-Ayrıntılar (mimari, ayarlar, riskler) için `CLAUDE.md`. Testler: `node --test proxy/test/*.test.mjs`.
-
-> **Not:** Abonelik tokeniyle istek gövdesini değiştiren yerel bir proxy kullanmanın Anthropic kullanım koşullarına uygunluğu doğrulanmamıştır; kendi sorumluluğunda kullan.
+Ayrıntılar (mimari, proxy tabanlı eski yol, riskler) için `CLAUDE.md`. Testler: `node --test proxy/test/*.test.mjs`, mod doğrulama: `claude plugin validate .`.

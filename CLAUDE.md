@@ -4,7 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Amaç
 
-Claude Code'un girilen prompt'a göre modeli ve effort seviyesini otomatik seçmesini sağlamak. Kullanıcı Claude aboneliği (OAuth) kullanıyor, API key değil. Önceki subagent yaklaşımı (`gorev-kolay/orta/zor` + global `CLAUDE.md`'deki "Model Yönlendirmesi" kuralı) router'la çakıştığı için 2026-10-11'de kaldırıldı; ajan dosyaları `~/.claude/agents-yedek-20261011-132617/` altında.
+Claude Code'un girilen prompt'a göre modeli ve effort seviyesini otomatik seçmesini sağlamak. Kullanıcı Claude aboneliği (OAuth) kullanıyor, API key değil. Önceki subagent yaklaşımı (`gorev-kolay/orta/zor` + global `CLAUDE.md`'deki "Model Yönlendirmesi" kuralı) çakıştığı için 2026-10-11'de kaldırıldı; ajan dosyaları `~/.claude/agents-yedek-20261011-132617/` altında.
+
+İki uygulama var, aynı seçim mantığını paylaşırlar:
+- **Mod (birincil):** repo kökü bir Claude Code eklentisi (`auto-model-effort`); `turn.step` kancasıyla her model isteğinin model/effort'unu Claude Code'un içinde değiştirir. Proxy, port, süreç yok.
+- **Proxy (eski yol, yedek):** `proxy/router.mjs`, `ANTHROPIC_BASE_URL` ile araya girip istek gövdesini yeniden yazar. Mod kanıtlandıktan sonra emekliye ayrılması planlanıyor; kullanıcıya sormadan silme.
 
 ## Komutlar
 
@@ -13,66 +17,57 @@ Bağımlılık yok (yalnızca Node ≥ 22, yerleşik modüller). Windows/PowerSh
 ```
 node --test proxy/test/*.test.mjs                 # tüm testler (ağa çıkmaz, sahte upstream kullanır)
 node --test --test-name-pattern "iptal" proxy/test/router.test.mjs   # tek test
-.\proxy\claude-auto.ps1 [claude argümanları]      # kendi portunda router başlatıp claude'u onun üzerinden çalıştırır
-.\proxy\claude-auto.ps1 --version                 # API'ye istek atmadan sarmalayıcıyı dener
-node proxy/router.mjs                             # router'ı elle başlat (127.0.0.1:8787)
-MODE=log node proxy/router.mjs                    # yalnızca karar logla, gövdeye dokunma
-echo '{"session_id":"x"}' | node proxy/statusline.mjs   # statusline çıktısını elle dene
+claude plugin validate .                          # mod'un manifestini ve hooks modülünü doğrular
+.\claude-auto.ps1 [claude argümanları]            # mod yüklü claude (= claude --plugin-dir <repo> --model sonnet ...)
+.\proxy\claude-auto.ps1 [claude argümanları]      # proxy yolu: kendi portunda router + claude
+MODE=log node proxy/router.mjs                    # proxy: yalnızca karar logla, gövdeye dokunma
+node proxy/spike.mjs                              # gözlemci: gövdeye dokunmadan istek yapısını (model, output_config.effort) proxy/spike.log'a yazar
 ```
 
-Kullanıcının PowerShell profilinde (`Documents 1\PowerShell\Microsoft.PowerShell_profile.ps1`) `claude-auto` fonksiyonu bu betiği çağırır; aynı dosyadaki `omni` fonksiyonu kullanıcınındır, dokunma.
+Mod'u gerçek API ile doğrulamak (giden isteği görmek için spike gözlemci olarak araya girer):
+`node proxy/spike.mjs` arka planda, sonra `ANTHROPIC_BASE_URL=http://127.0.0.1:8787 claude -p "<prompt>" --model sonnet --plugin-dir <repo> --output-format json`; `proxy/spike.log`'da `govde.model` / `govde.output_config.effort`.
 
-Router ortam değişkenleri: `PORT` (8787), `UPSTREAM_URL` (https://api.anthropic.com), `ROUTE_FROM` (virgüllü model listesi, varsayılan `claude-sonnet-5-5`), `MODE` (`route`|`log`), `DOWNGRADE_MAX_TOKENS` (30000), `ROUTER_LOG` (`proxy/router.log`), `CLAUDE_AUTO_DURUM` (statusline durum klasörü, varsayılan `%TEMP%\claude-auto`), `CLAUDE_AUTO_EBEVEYN` (izlenecek üst süreç PID'i; ölünce router kapanır).
-
-Gerçek çalışan modeli görmek için `proxy/router.log` içindeki `yanit_modeli` alanına bak (yanında gerçek `usage`: `cache_yazma`/`cache_okuma`). Claude Code'un `modelUsage` ve statusline göstergeleri istemcinin *istediği* modeli gösterir, router'ın değiştirdiğini yansıtmaz.
+Kullanıcının PowerShell profilinde (`Documents 1\PowerShell\Microsoft.PowerShell_profile.ps1`) `claude-auto` fonksiyonu kökteki `claude-auto.ps1`'i çağırır; aynı dosyadaki `omni` fonksiyonu kullanıcınındır, dokunma. Betiklerde bilerek `param()` bloğu yok: `[Parameter]` PowerShell'e `-p`'yi ortak parametre öneki sandırır.
 
 ## Mimari
 
-`claude-auto.ps1` → boş bir port seçip kendi router'ını başlatır (`/__router` sağlık yolu ile doğrular), `ANTHROPIC_BASE_URL` ve `CLAUDE_CODE_GATEWAY_HINT_HEADERS=1` ayarlayıp `claude --settings <geçici statusline ayarı> --model sonnet` çalıştırır (kullanıcı `--model` verdiyse dokunmaz), çıkışta router'ı durdurur ve değişkenleri geri alır. Her pencerenin ayrı router'ı vardır. Pencere X ile kapatılırsa PowerShell `finally` çalışmaz; bu yüzden router `CLAUDE_AUTO_EBEVEYN` PID'ini 3 sn'de bir yoklar ve süreç yoksa kendini kapatır. Betikte bilerek `param()` bloğu yok: `[Parameter]` PowerShell'e `-p`'yi ortak parametre öneki sandırır.
+Ortak, saf (Node'suz) modüller — mod Node'suz bir ortamda çalıştığı için bunlar `node:` modülü içe aktaramaz:
+- `proxy/skor.mjs` — `skorla(prompt)`: 0–100 zorluk skoru. OmniRoute'un `specificityRules` fikrinden uyarlandı: kategori başına tavanlı kural puanları (kod, matematik, **agir** = mimari/tasarım/kök neden/güvenlik açığı gibi tek başına zor işaretleri, akıl yürütme, ayrıntı, alan) ve kolay-işaret cezası. Kalıplar Türkçe+İngilizce. `kok()` kelime başında Unicode sınır + sonda ek toleransı, `tam()` iki uçta sınır (kolay kelimeleri için: "bul" → "bulut" eşleşmesin). JS `\b` ASCII bilir, Türkçe harfle başlayan kelimeleri kaçırır. Kökler ünsüz yumuşamasından önce kesilir (açık/açığı → "açı"). Regex'ler yalnızca ilk 4000 karaktere uygulanır (ReDoS; skorlama senkron). Kolay cezası ağır/alan sinyali varsa uygulanmaz.
+- `proxy/secim.mjs` — `secimYap(metin, {onceki, istemciModeli, baglamTokeni, dusurmeSiniri})`. Model seviyeye göre (`ESLEME`): trivial/simple/moderate → sonnet, complex/expert → opus; yalnızca açık kolay işaretli trivial → haiku (`KOLAY_ESLEME`); kanıtsız prompt ucuza inmez. Effort skora göre ve model başına (`effortBul`, `YUKSEK_EFFORT_ESIGI`): medium her modelin varsayılanı olduğu için geniş (kullanıcı tercihi): haiku hep medium, sonnet > 30 high, opus > 75 high, low yok. Sinyalsiz, 25 karakterden kısa prompt ("devam et") önceki kararı sürdürür. Histerezis: konuşma tahmini > sınır ise model düşürülmez; ilk kararda taban istemcinin modeli. Effort histerezisten sonra, çalışacak modelin eşiğine göre.
+- `proxy/gorunum.mjs` — `satir(d)`: statusline metni (`⚡ auto → Opus 5.5 · high · expert (72)`).
 
-Statusline: Claude Code'un kendi model göstergesi istemcinin *istediği* modeli gösterir. Bu yüzden router her ana konuşma kararını ve yanıttaki gerçek modeli `%TEMP%\claude-auto\<session_id>.json` dosyasına yazar (`x-claude-code-session-id` = statusline girdisindeki `session_id`, transkript dosya adıyla da aynı; doğrulandı). `proxy/statusline.mjs` bunu okuyup `⚡ auto → Opus 5.5 · high · expert (72)` basar. Statusline yalnızca `claude-auto` oturumlarına `--settings` ile eklenir; kullanıcının global `statusLine` ayarı yok (ekrandaki "Clear · % of context" bandı bir eklentiden geliyor). Bir günden eski durum dosyaları router açılışında silinir.
+**Mod** (`.claude-plugin/plugin.json`, `hooks/hooks.json`, `hooks/register.ts`): `turn.start` kullanıcının prompt metnini verir (prompt'suz turda — arka plan ajanı bildirimi, devam — metin boş, önceki karar sürer); karar `secimYap` ile verilir, bağlam tahmini `$.session.messages()`'tan. `turn.step` her model isteğinde çalışır: `agentId` varsa (alt ajan) dokunmaz; oturum modeli `claude-sonnet-5-5` değilse (`/model` ile değiştirildiyse) yönlendirmez ve statusline'da söyler; aksi hâlde `next({ ...e, model, effort })`. Statusline `$.ui.status`, gerçek model yanıtın `usage.model`'inden. Mod API'si için tipler: plugin-authoring skill'inin `types/claude-code.d.ts`'i (`'turn.step'`, `TurnStepInput`, `TurnStepResult`); engine mod yüklenince `.claude-plugin/types/` yazar (gitignore'da). Eklenti adı `claude-` ile başlayamaz (Anthropic'e ayrılmış). Kalıcı log yok (`$.fs.write` dosyanın tamamını yazar, ekleme yok).
 
-Claude Code'un her `/v1/messages` isteği `proxy/router.mjs`'den geçer; OAuth başlıkları aynen `api.anthropic.com`'a iletilir, gövdedeki `model` ve `output_config.effort` yeniden yazılır. Üç modül:
-
-- `proxy/skor.mjs` — saf `skorla(prompt)`: 0–100 zorluk skoru. OmniRoute'un `specificityRules` fikrinden uyarlandı: kategori başına tavanlı kural puanları (kod, matematik, **agir** = mimari/tasarım/kök neden/güvenlik açığı gibi tek başına zor işaretleri, akıl yürütme, ayrıntı, alan) ve kolay-işaret cezası. Kalıplar Türkçe+İngilizce. `kok()` kelime başında Unicode sınır + sonda ek toleransı, `tam()` iki uçta sınır (kolay kelimeleri için: "bul" → "bulut" eşleşmesin). JS `\b` ASCII bilir, Türkçe harfle başlayan kelimeleri kaçırır. Regex'ler yalnızca ilk 4000 karaktere uygulanır (dosya yolu regex'i uzun girdide karesel yavaşlar; skorlama event-loop'ta senkron). Kolay cezası ağır/alan sinyali varsa uygulanmaz.
-- `proxy/karar.mjs` — `kararVer(body, ipucu, oturumlar, cfg)`; `{atla, sebep}` ya da karar döner. Kurallar: (1) yalnızca `x-claude-code-request-class: main` istekleri yönlendirilir (başlık yoksa yedek sezgi: `agent-id` varsa ya da `tools` boşsa atla); `ROUTE_FROM` dışı model atlanır ve sebebi loglanır. (2) Karar anahtarı `x-claude-code-prompt-id` (yoksa mesaj indeksi + metin özeti, rewind'a karşı); aynı prompt boyunca karar sabit. Sinyalsiz, 25 karakterden kısa prompt ("devam et") önceki kararı sürdürür. (3) Model seviyeye göre (`ESLEME`): trivial/simple/moderate → sonnet, complex/expert → opus; yalnızca açık kolay işaretli trivial prompt → haiku (`KOLAY_ESLEME`). Yanlış ucuz model daha zararlı olduğu için kanıtsız prompt ucuza inmez. Effort skora göre ve model başına (`effortBul`, `YUKSEK_EFFORT_ESIGI`): medium her modelin varsayılanı olduğu için geniş tutulur (kullanıcı tercihi); haiku hep medium, sonnet skor > 30 ise high, opus skor > 75 ise high; low kullanılmaz. Effort histerezisten sonra, gerçekten çalışacak modelin eşiğine göre belirlenir. (4) Histerezis: `messages` tahmini > `DOWNGRADE_MAX_TOKENS` ise model düşürülmez; ilk istekte taban istemcinin istediği model.
-- `proxy/router.mjs` — HTTP proxy. Hop-by-hop başlıklar ve `accept-encoding` iletilmez. İstemci iptalinde (Esc) upstream isteği kesilir; upstream akış ortasında koparsa istemci bağlantısı da kapatılır. Yalnızca tam `/v1/messages` yolu yönlendirilir (`count_tokens` değil). Yeniden yazılmış istek 400/404 alırsa API hata mesajı loglanır, orijinal gövdeyle bir kez yeniden denenir ve o prompt pasifleşir (`pasiflestir`). Yönlendirme hatası isteği düşürmez. Mesaj içeriği ve token değeri loglanmaz. Her `/v1/messages` kaydında `onek` (system ve tools'un 10 haneli sha1 özeti + araç sayısı) var: aynı modelde `cache_okuma=0` görülürse önceki istekle `onek` karşılaştırılır; özet değiştiyse kaçağı Claude Code'un öneki değiştirmesi yapmıştır, model/effort değişimi değil.
-
-`proxy/spike.mjs` ilk keşif aracıdır (yalnızca iletir ve istek yapısını loglar); `router.mjs` onun yerini aldı, tanılama için duruyor.
+**Proxy** (`proxy/router.mjs` + `proxy/karar.mjs`): `karar.mjs` istek gövdesinden gerçek prompt'u bulur (tool_result, `<system-reminder>`, `<task-notification>` vb. atlanır), yalnızca `x-claude-code-request-class: main` isteklerini yönlendirir (başlıklar `CLAUDE_CODE_GATEWAY_HINT_HEADERS=1` ile açılır; yoksa yedek sezgi), karar anahtarı `x-claude-code-prompt-id` (yoksa indeks + metin özeti). `router.mjs`: hop-by-hop başlıklar ve `accept-encoding` iletilmez; Esc'te upstream kesilir; akış koparsa istemci kapatılır; yalnızca tam `/v1/messages` yönlendirilir; yeniden yazılmış istek 400/404 alırsa orijinalle bir kez tekrar denenir ve prompt pasifleşir; her kayıtta `onek` (system/tools sha1 özeti) cache kaçağı teşhisi için; durum dosyası `%TEMP%\claude-auto\<session_id>.json` → `proxy/statusline.mjs`. `proxy/claude-auto.ps1` her pencereye ayrı port/router açar, router üst süreci (`CLAUDE_AUTO_EBEVEYN`) ölünce kendini kapatır. Ortam değişkenleri: `PORT`, `UPSTREAM_URL`, `ROUTE_FROM`, `MODE`, `DOWNGRADE_MAX_TOKENS`, `ROUTER_LOG`, `CLAUDE_AUTO_DURUM`, `CLAUDE_AUTO_EBEVEYN`. Proxy yolunda Claude Code'un `modelUsage`/model göstergesi istemcinin *istediği* modeli gösterir; mod yolunda gerçek modeli gösterir.
 
 ## Doğrulananlar (2026-10-10/11, Claude Code v2.1.296, Claude Pro/OAuth)
 
-- Proxy üzerinden `Authorization: Bearer` + `anthropic-beta: ...oauth-2025-04-20...` aynen iletilince istek 200 döner; ek giriş gerekmez. Doküman ([llm-gateway](https://code.claude.com/docs/en/llm-gateway)) abonelik + gateway'i, OAuth başlığının iletilmesi şartıyla anlatıyor.
-- Gövde: model = üst düzey `model`; effort = `output_config.effort`. Yeniden yazılan gövde kabul edilir, yanıt SSE `message_start` içinde yeni modelle gelir.
-- `CLAUDE_CODE_GATEWAY_HINT_HEADERS=1` ile ana istek `x-claude-code-request-class: main` taşıyor (gerçek API ile doğrulandı). Başlıklar [llm-gateway-protocol](https://code.claude.com/docs/en/llm-gateway-protocol) dokümanında.
-- Uçtan uca (`claude-auto.ps1 -p ...`): "yazım hatası düzelt" → haiku-low, yanıt `claude-haiku-5-5`; "kök neden / race condition / güvenlik" → opus-high, yanıt `claude-opus-5-5`.
-- Cache: kullanıcının ortamında sabit önek (sistem + ~221 araç) ≈ 211 bin token. Önek model başına **oturumlar arası** cache'leniyor: önceki Haiku oturumlarından sonra yeni bir oturumun Haiku isteği `cache_okuma: 211231, cache_yazma: 0` gösterdi. Model değişiminin maliyeti esas olarak her modelin önekini TTL içinde bir kez yazmak. (Gövde baytı/4 tahmini gerçek token sayısının ~%65'i.)
-- Mutasyon kontrolü: iptal, akış kopması ve ReDoS düzeltmelerinin her biri geri alınınca ilgili test kırılıyor.
+- **Mod:** `claude -p --plugin-dir <repo>` ile kolay prompt → giden istek `claude-haiku-5-5`/`medium`, yanıt Haiku, Claude Code'un `modelUsage`'ı da `claude-haiku-5-5`; skor 37 prompt → `claude-sonnet-5-5`/`high`. (Spike gözlemci olarak, gövdeye dokunmadan.) `claude plugin validate .` geçiyor.
+- Proxy: `Authorization: Bearer` + `anthropic-beta: ...oauth-2025-04-20...` aynen iletilince istek 200; gövde yeniden yazımı kabul edilir. `CLAUDE_CODE_GATEWAY_HINT_HEADERS=1` ile `x-claude-code-request-class: main` geliyor. Mutasyon kontrolü: iptal, akış kopması, ReDoS ve üst süreç izleme düzeltmeleri geri alınınca ilgili testler kırılıyor.
+- İnteraktif (proxy, stock-tracker-v2): aynı oturumda haiku → sonnet-medium → sonnet-high → opus-medium → opus-high geçişleri statusline'da göründü, hiç `geri_donus` yok (çok turlu thinking blokları sorun çıkarmadı).
+- Cache: aynı model içinde okuma oranı %82–92; effort değişimi cache'i bozmuyor. Her modele ilk geçişte bağlamın tamamı yeniden yazılıyor (haiku 277k, sonnet 314k, opus 354k); taban bağlamın ~189k'sı MCP araç tanımları. Cache yazma okumadan ~12,5 kat pahalı (büyük bağlamda bir geçiş ≈ 12 normal tur). Kullanıcı geçiş kurallarını ve MCP'leri şimdilik böyle bırakmayı seçti (2026-10-11). Açıklanamayan kaçak: `<task-notification>` turunda aynı model/effort ile 371k yeniden yazıldı; proxy'de `onek` tanısı bundan sonra eklendi.
 
 ## Riskler ve doğrulanmayanlar
 
-- Abonelik OAuth'u ile gövde yeniden yazmanın kullanım koşullarına uygunluğu: açık hüküm bulunamadı; protokol dokümanı gövdeyi değiştirmemeyi öneriyor, [legal-and-compliance](https://code.claude.com/docs/en/legal-and-compliance) Anthropic'in önceden haber vermeden önlem alabileceğini söylüyor. Consumer Terms okunmadı. Kullanıcı riski bilerek devam etti (2026-10-11).
-- Skorlayıcı kural tabanlı; ağırlıklar elle ayarlandı, gerçek kullanımla kalibre edilmedi. Bilinen zayıflık: "tasarım" kelimesi UI işlerinde de ağır sayılır (sonnet-high).
-- `router.log` sınırsız büyür.
-- Oturum başında Claude Code'un 79 token'lık `auxiliary` isteği ara sıra 429 alıyor; router bu isteğe dokunmuyor (gövde değişmeden gidiyor). Proxy'siz de olup olmadığı karşılaştırılmadı.
-
-Cache ölçümü (aynı oturum, `router.log` usage): aynı model içinde okuma oranı %82–92. Her modele ilk geçişte bağlamın tamamı yeniden yazılıyor (haiku 277k, sonnet 314k, opus 354k); taban bağlamın ~189k'sı MCP araç tanımları. Cache yazma okumadan ~12,5 kat pahalı, yani büyük bağlamda bir geçiş ≈ 12 normal tur. Kullanıcı geçiş kurallarını ve MCP'leri şimdilik böyle bırakmayı seçti (2026-10-11). Açıklanamayan kaçak: arka plan ajanının `<task-notification>` turunda aynı model/effort ile 371k yeniden yazıldı (önceki yazmadan 3,5 dk sonra); `onek` tanısı bundan sonra eklendi.
-
-İnteraktif doğrulama (2026-10-11, stock-tracker-v2): aynı oturumda haiku → sonnet-medium → sonnet-high → opus-medium → opus-high geçişleri statusline'da beklenen skorlarla göründü, `router.log`'da hiç `geri_donus` yok (çok turlu thinking blokları sorun çıkarmadı).
+- Mod: yalnızca `claude -p` ile doğrulandı; interaktif oturumda `$.ui.status` görünümü, çok turlu geçiş ve `--resume` denenmedi. Yeniden yazılan istek reddedilirse (400) mod'da proxy'deki gibi geri dönüş yok. Mod API'si "EARLY ACCESS" (sürümler arasında değişebilir).
+- Proxy: abonelik OAuth'u ile gövde yeniden yazmanın kullanım koşullarına uygunluğu belirsiz (protokol dokümanı gövdeyi değiştirmemeyi öneriyor). Mod belgelenmiş eklenti API'sini kullandığı için bu gri alan mod'da büyük ölçüde yok.
+- Skorlayıcı kural tabanlı, gerçek kullanımla kalibre edilmedi. "tasarım" kelimesi UI işlerinde de ağır sayılır.
+- Oturum başında Claude Code'un 79 token'lık `auxiliary` isteği ara sıra 429 alıyor (proxy ona dokunmuyor; proxy'siz karşılaştırılmadı).
 
 ## Elenen yaklaşımlar (kısa)
 
-- **Hook + skill:** `UserPromptSubmit` hook'u model/effort değiştiremez. Skill frontmatter `model` override'ı ana modeli değiştirmiyor; [model-config](https://code.claude.com/docs/en/model-config) bir yerde "Claude Code ignores the override … runs on the session model" diyor (bağlamı tam okunmadı). Arayüz yine de `claude-opus-5-5` etiketi gösteriyor (yanıltıcı). Prototip `9075d5e` commit'inde, kaldırıldı.
-- **OmniRoute / CLIProxyAPI:** prompt zorluğuna göre değil maliyet/kota/sağlık skoruna göre sağlayıcılar arası seçer ya da alias'ı istemciye bırakır; Claude effort yönetmez; abonelik tokenını üçüncü tarafa verir. Yalnızca OmniRoute'un zorluk skoru fikri alındı (`open-sse/services/specificityRules.ts`, `complexityRouter.ts`).
-- **Subagent devri:** ana model değişmez. Agent aracının `effort` parametresi (v2.1.292+) var ama kararı model verir.
-- Keşfedilmemiş tek resmi yol: changelog 2.1.290, `claude agents` üzerinden meşgul oturuma gönderilen `/model`, `/effort` (doğrulanmadı).
+- **Hook + skill:** `UserPromptSubmit` hook'u model/effort değiştiremez. Skill frontmatter `model` override'ı ana modeli değiştirmiyor ([model-config](https://code.claude.com/docs/en/model-config): "Claude Code ignores the override …"); arayüz yine de `claude-opus-5-5` etiketi gösteriyor (yanıltıcı). Prototip `9075d5e` commit'inde.
+- **MCP:** modele araç verir, isteğin modelini değiştiremez.
+- **OmniRoute / CLIProxyAPI:** prompt zorluğuna göre değil maliyet/kota/sağlığa göre sağlayıcılar arası seçer; Claude effort yönetmez; abonelik tokenını üçüncü tarafa verir. Yalnızca OmniRoute'un zorluk skoru fikri alındı (`open-sse/services/specificityRules.ts`).
+- **Subagent devri:** ana model değişmez.
 
 ## İşler bitince değinilecek (bu projenin konusu değil)
 
-- **Kapanış hook'u (`SessionEnd`/`Stop`):** Kullanıcı daha önce bir tane yaptığını söylüyor, ama 2026-10-10'da `~/.claude/settings.json` (yalnızca `PreToolUse`/Agent ve `PostToolUse`/`git push`) içinde yok; interaktif oturum transkriptinde de `SessionEnd` kaydı yok. Eklentilerde (plugin) veya başka bir yapılandırma katmanında olabilir, orası kontrol edilmedi.
-- **Bağlam boyutu:** sabit önek ≈ 211 bin token (çoğu MCP araç tanımları). Her yeni model/TTL için bu kadar cache yazılıyor; kullanılmayan MCP sunucularını kapatmak maliyeti düşürür.
+- **Kapanış hook'u (`SessionEnd`/`Stop`):** Kullanıcı daha önce bir tane yaptığını söylüyor, ama 2026-10-10'da `~/.claude/settings.json` içinde yok; eklentilerde veya başka bir katmanda olabilir, kontrol edilmedi.
+- **Bağlam boyutu:** taban bağlam ≈ 280k token (~189k MCP araçları); kullanılmayan MCP sunucularını kapatmak her turu ve her model geçişini ucuzlatır.
 
 ## Sıradaki işler
 
-1. Gerçek kullanımla çalıştır; `router.log`'daki karar dağılımına, `geri_donus` ve `cache_yazma` değerlerine bakıp `skor.mjs` ağırlıklarını ve `ESLEME` tablosunu kalibre et.
-2. İstenirse log döndürme ve `claude-auto`'yu PATH'e alan kısayol.
+1. Mod'u interaktif oturumda doğrula (statusline, çok turlu geçiş); sonra proxy'yi emekliye ayırma kararını kullanıcıyla ver.
+2. Gerçek kullanımla skor ağırlıklarını ve `ESLEME`/effort eşiklerini kalibre et (mod'da kalıcı log yok; gerekirse `MODE=log` proxy ya da spike gözlemci).
+3. İstenirse mod'u kalıcı kur (`.claude-plugin/marketplace.json` + `claude plugin marketplace add <repo>` + `/plugin install`), böylece `--plugin-dir` gerekmez.
