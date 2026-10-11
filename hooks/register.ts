@@ -3,6 +3,7 @@
 // (lib/select.mjs, lib/display.mjs), kept out of the mod code so they can be tested with Node.
 import type { EngineInterface, Register, Timer } from 'claude-code'
 import { MODELS, SEED_IDS, decide, learnModel } from '../lib/select.mjs'
+import { idsFromCatalog } from '../lib/catalog.mjs'
 import { autoCommand, label, logSummary, statusNotice } from '../lib/display.mjs'
 import { parseTriage, triageRequest } from '../lib/triage.mjs'
 
@@ -23,6 +24,29 @@ type ModelIds = Record<string, string>
 // Newest full model id seen per family, kept across sessions: turn.step does not resolve aliases, so the routed
 // request needs a real id. Any id the mod sees (session model, subagents, responses) can raise an entry.
 const IDS_KEY = 'modelIds'
+
+// Claude Code keeps its own model catalog under <config dir>/cache/model-catalog and refreshes it itself; every
+// plain Claude id in it raises its family's entry, so a new release (Opus 5.6) is picked up with no change here.
+// An unreadable catalog is logged once per session, not on every prompt.
+let catalogErrorLogged = false
+
+async function learnFromCatalog($: EngineInterface, ids: ModelIds): Promise<ModelIds> {
+  try {
+    const home = (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME'))
+    const configDir = (await $.env.get('CLAUDE_CONFIG_DIR')) ?? `${home}/.claude`
+    const dir = `${configDir}/cache/model-catalog`
+    for (const entry of await $.fs.list(dir)) {
+      if (entry.kind !== 'file' || !entry.name.endsWith('.json')) continue
+      for (const id of idsFromCatalog(await $.fs.read(`${dir}/${entry.name}`))) ids = await remember($, ids, id)
+    }
+  } catch (error) {
+    if (!catalogErrorLogged) {
+      catalogErrorLogged = true
+      await record($, { skipped: 'catalog-unreadable', error: String(error) })
+    }
+  }
+  return ids
+}
 
 async function remember($: EngineInterface, ids: ModelIds, seen: string | undefined): Promise<ModelIds> {
   const next = learnModel(ids, seen)
@@ -104,6 +128,7 @@ export const register: Register = on => {
     // Empty text is a turn without a typed prompt (a background agent's notification, a continuation):
     // the previous decision stands.
     if (enabled && e.text.trim()) {
+      ids = await learnFromCatalog($, ids)
       const messages = await $.session.messages()
       // Haiku rates the prompt; a short follow-up after a decision skips the call (the rules handle it), and
       // a failed or unparseable call leaves `triage` undefined, so the rule-based score stands in.
