@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MODELLER, Oturumlar, gercekPrompt, kararVer, pasiflestir, uygula } from "../karar.mjs";
+import { MODELLER, Oturumlar, effortBul, gercekPrompt, kararVer, pasiflestir, uygula } from "../karar.mjs";
 
 const cfg = { yonlendirilecek: [MODELLER.sonnet], dusurmeTokenSiniri: 30000 };
 const arac = [{ name: "Bash" }];
@@ -37,7 +37,7 @@ test("zor prompt opus'a, açık kolay işaretli prompt haiku'ya", () => {
   const o = new Oturumlar();
   assert.equal(kararVer(gövde([kullanici("bu servisin mimari tasarımını yap")]), ana("s1"), o, cfg).model, MODELLER.opus);
   const kolay = kararVer(gövde([kullanici("bu fonksiyonu yeniden adlandır")]), ana("s2"), o, cfg);
-  assert.deepEqual([kolay.model, kolay.effort], [MODELLER.haiku, "low"]);
+  assert.deepEqual([kolay.model, kolay.effort], [MODELLER.haiku, "medium"]);
 });
 
 test("sinyalsiz prompt ucuz modele inmez: sonnet/medium", () => {
@@ -112,7 +112,7 @@ test("küçük bağlamda model düşürülür; büyük bağlamda cache korunur",
     kullanici("bu fonksiyonu yeniden adlandır"),
   ];
   const k = kararVer(gövde(buyuk), ana("b"), o2, cfg);
-  assert.deepEqual([k.model, k.sebep, k.effort], [MODELLER.opus, "cache-histerezisi", "low"]);
+  assert.deepEqual([k.model, k.sebep, k.effort], [MODELLER.opus, "cache-histerezisi", "medium"]);
 });
 
 test("oturumun ilk isteği büyük bağlamla gelirse (--resume) haiku'ya inilmez", () => {
@@ -144,4 +144,17 @@ test("uygula: gövdeyi yeniden yazar, değişmiyorsa false döner", () => {
   assert.deepEqual(b, { model: MODELLER.opus, output_config: { effort: "high", diger: 1 } });
   assert.equal(uygula(b, { model: MODELLER.opus, effort: "high" }), false);
   assert.equal(uygula(b, { atla: true, sebep: "x" }), false);
+});
+
+test("effort bantları: medium geniş, high yalnızca model eşiğinin üstünde, low yok", () => {
+  assert.equal(effortBul(MODELLER.haiku, 100), "medium");
+  assert.deepEqual([30, 31].map((s) => effortBul(MODELLER.sonnet, s)), ["medium", "high"]);
+  assert.deepEqual([41, 75, 76].map((s) => effortBul(MODELLER.opus, s)), ["medium", "medium", "high"]);
+  const o = new Oturumlar();
+  const orta = kararVer(gövde([kullanici("veri çekme kodunda race condition olabilir mi? incele")]), ana("a"), o, cfg); // 27
+  assert.deepEqual([orta.model, orta.effort], [MODELLER.sonnet, "medium"]);
+  const ortaYuksek = kararVer(gövde([kullanici("veri çekme kodunda race condition olabilir mi? neden olur, incele ve alternatifleri karşılaştır")]), ana("b"), o, cfg); // 37
+  assert.deepEqual([ortaYuksek.model, ortaYuksek.effort], [MODELLER.sonnet, "high"]);
+  const mimari = kararVer(gövde([kullanici("bu servisin mimari tasarımını yap")]), ana("c"), o, cfg); // 44
+  assert.deepEqual([mimari.model, mimari.effort], [MODELLER.opus, "medium"]);
 });

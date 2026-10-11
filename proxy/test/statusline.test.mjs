@@ -30,3 +30,8 @@ test("durumOku: dosyayı okur, geçersiz ya da yol içeren kimliği reddeder", (
   assert.equal(durumOku("../abc-123", dizin), null);
   assert.equal(durumOku(undefined, dizin), null);
 });
+
+test("'ayni-prompt' sebebi gürültü olduğu için gösterilmez", () => {
+  const karar = { model: "claude-sonnet-5-5", effort: "medium", seviye: "simple", skor: 10, sebep: "ayni-prompt" };
+  assert.equal(satir({ karar }), "⚡ auto → Sonnet 5.5 · medium · simple (10)");
+});

@@ -12,20 +12,21 @@ export const MODELLER = {
 };
 const SIRA = { [MODELLER.haiku]: 0, [MODELLER.sonnet]: 1, [MODELLER.opus]: 2 };
 
-// Seviye -> model + effort. Yanlış ucuz model, yanlış pahalı modelden daha zararlı olduğu için
-// sinyalsiz/az sinyalli prompt sonnet/medium'da kalır.
+// Seviye -> model. Yanlış ucuz model, yanlış pahalı modelden daha zararlı olduğu için
+// sinyalsiz/az sinyalli prompt sonnet'te kalır; haiku yalnızca açık kolay işaretle (yeniden adlandır, listele...).
 export const ESLEME = {
-  trivial: { model: MODELLER.sonnet, effort: "medium" },
-  simple: { model: MODELLER.sonnet, effort: "medium" },
-  moderate: { model: MODELLER.sonnet, effort: "high" },
-  complex: { model: MODELLER.opus, effort: "medium" },
-  expert: { model: MODELLER.opus, effort: "high" },
+  trivial: MODELLER.sonnet,
+  simple: MODELLER.sonnet,
+  moderate: MODELLER.sonnet,
+  complex: MODELLER.opus,
+  expert: MODELLER.opus,
 };
-// Prompt'ta açık bir kolay işaret (yeniden adlandır, typo, listele...) varsa ucuz tarafa inilir.
-export const KOLAY_ESLEME = {
-  trivial: { model: MODELLER.haiku, effort: "low" },
-  simple: { model: MODELLER.sonnet, effort: "low" },
-};
+export const KOLAY_ESLEME = { trivial: MODELLER.haiku };
+
+// Effort skora göre, model başına: medium her modelin varsayılanı olduğu için geniş tutulur;
+// skor eşiği aşınca high. low kullanılmaz.
+export const YUKSEK_EFFORT_ESIGI = { [MODELLER.haiku]: Infinity, [MODELLER.sonnet]: 30, [MODELLER.opus]: 75 };
+export const effortBul = (model, skor) => (skor > (YUKSEK_EFFORT_ESIGI[model] ?? Infinity) ? "high" : "medium");
 
 // Claude Code'un kullanıcı adına enjekte ettiği bloklar; gerçek prompt sayılmaz.
 const SISTEM_BLOKLARI = /^\s*<(system-reminder|local-command|command-(name|message|args)|task-notification|bash-(input|stdout|stderr))/;
@@ -96,8 +97,8 @@ export function kararVer(body, ipucu, oturumlar, cfg) {
   if (onceki?.anahtar === anahtar) return { ...onceki.karar, sebep: onceki.karar.pasif ? onceki.karar.sebep : "ayni-prompt" };
 
   const s = skorla(prompt.text);
-  const hedef = (s.sinyaller.includes("kolay-isaret") && KOLAY_ESLEME[s.seviye]) || ESLEME[s.seviye];
-  let karar = { ...hedef, skor: s.skor, seviye: s.seviye, sinyaller: s.sinyaller, sebep: "skor" };
+  const hedefModel = (s.sinyaller.includes("kolay-isaret") && KOLAY_ESLEME[s.seviye]) || ESLEME[s.seviye];
+  let karar = { model: hedefModel, skor: s.skor, seviye: s.seviye, sinyaller: s.sinyaller, sebep: "skor" };
 
   if (onceki && !onceki.karar.pasif && s.skor === 0 && prompt.text.length < KISA_DEVAM) {
     karar = { ...onceki.karar, sebep: "kisa-devam" };
@@ -105,9 +106,11 @@ export function kararVer(body, ipucu, oturumlar, cfg) {
     // İlk istekte taban istemcinin istediği model: büyük bağlamla (--resume) başlayan oturum düşürülmez.
     const simdiki = (!onceki?.karar.pasif && onceki?.karar.model) || body.model;
     const baglamTokeni = JSON.stringify(body.messages).length / 4;
-    if (SIRA[hedef.model] < SIRA[simdiki] && baglamTokeni > cfg.dusurmeTokenSiniri) {
+    if (SIRA[hedefModel] < SIRA[simdiki] && baglamTokeni > cfg.dusurmeTokenSiniri) {
       karar = { ...karar, model: simdiki, sebep: "cache-histerezisi" };
     }
+    // Effort, sonunda hangi model çalışacaksa onun eşiğine göre belirlenir.
+    karar.effort = effortBul(karar.model, s.skor);
   }
 
   oturumlar.set(ipucu.oturumId, { anahtar, karar });

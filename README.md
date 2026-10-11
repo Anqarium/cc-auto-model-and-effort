@@ -12,12 +12,15 @@ Gereksinim: Node.js 22+ (bağımlılık yok).
 
 Kendi router'ını boş bir portta başlatır, `claude`'u onun üzerinden çalıştırır ve çıkınca durdurur. Her prompt'u 0–100 arası skorlar:
 
-| Prompt | Model / effort |
-|---|---|
-| Açıkça mekanik (yeniden adlandır, typo, listele…) | Haiku / low |
-| Belirgin zorluk sinyali yok | Sonnet / medium |
-| Orta (tek bir ağır işaret: deadlock, refactor…) | Sonnet / high |
-| Zor (mimari + tasarım, kök neden + güvenlik…) | Opus / medium–high |
+| Prompt | Skor | Model / effort |
+|---|---|---|
+| Açıkça mekanik (yeniden adlandır, typo, listele…) | 0–5 | Haiku / medium |
+| Belirgin zorluk sinyali yok ya da orta | 0–30 | Sonnet / medium |
+| Orta-zor (ağır işaret + analiz: race condition'ı incele ve karşılaştır…) | 31–40 | Sonnet / high |
+| Zor (mimari + tasarım, kök neden + güvenlik…) | 41–75 | Opus / medium |
+| Çok zor ve çok yönlü | 76+ | Opus / high |
+
+Medium her modelin varsayılan effort'u olduğu için en geniş aralığı kaplar; low kullanılmaz.
 
 Alt ajan, özetleme (compaction) ve arka plan isteklerine dokunulmaz. Kararlar ve gerçek çalışan model `proxy/router.log` dosyasına yazılır (prompt metni yazılmaz).
 

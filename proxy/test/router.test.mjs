@@ -63,7 +63,9 @@ function gonder(port, govde, basliklar = {}, yol = "/v1/messages?beta=true") {
 
 const bekle = (ms) => new Promise((c) => setTimeout(c, ms));
 const PROMPT_EXPERT =
-  "kök neden analizi: dağıtık sistemde race condition ve güvenlik açığı var; src/app.ts içinde hata çıkıyor. adım adım incele, karşılaştır.";
+  "kök neden analizi: dağıtık sistemde race condition ve güvenlik açığı var; src/app.ts içinde hata çıkıyor. " +
+  "adım adım incele, karşılaştır, performans etkisini değerlendir.\n" +
+  "1. akışı çıkar\n2. alternatifleri tart\n3. refactor planla\n```ts\nconst x = await f();\n```"; // skor 93 → opus/high
 const ANA = { "x-claude-code-session-id": "sess-1", "x-claude-code-request-class": "main", "x-claude-code-prompt-id": "p-1" };
 
 const istek = (metin, ek = {}) => ({
@@ -91,17 +93,18 @@ test("zor prompt: upstream'e opus + high gider, başlıklar aynen, usage loglan�
     assert.match(log, /"cache_yazma":100/);
     assert.doesNotMatch(log, /test-token/);
     assert.doesNotMatch(log, /kök neden analizi: dağıtık/);
+    assert.doesNotMatch(log, /alternatifleri tart/);
   } finally {
     await k.kapat();
   }
 });
 
-test("kolay prompt: haiku + low", async () => {
+test("kolay prompt: haiku + medium", async () => {
   const k = await kur();
   try {
     await gonder(k.port, istek("bu fonksiyonu yeniden adlandır"), ANA);
     const gelen = JSON.parse(k.alinan[0].govde);
-    assert.deepEqual([gelen.model, gelen.output_config.effort], ["claude-haiku-5-5", "low"]);
+    assert.deepEqual([gelen.model, gelen.output_config.effort], ["claude-haiku-5-5", "medium"]);
   } finally {
     await k.kapat();
   }

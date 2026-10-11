@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Amaç
 
-Claude Code'un girilen prompt'a göre modeli ve effort seviyesini otomatik seçmesini sağlamak. Kullanıcı Claude aboneliği (OAuth) kullanıyor, API key değil. Önceki subagent denemesi (`gorev-kolay/orta/zor`) çok nadir kullanıldığı için beğenilmedi.
+Claude Code'un girilen prompt'a göre modeli ve effort seviyesini otomatik seçmesini sağlamak. Kullanıcı Claude aboneliği (OAuth) kullanıyor, API key değil. Önceki subagent yaklaşımı (`gorev-kolay/orta/zor` + global `CLAUDE.md`'deki "Model Yönlendirmesi" kuralı) router'la çakıştığı için 2026-10-11'de kaldırıldı; ajan dosyaları `~/.claude/agents-yedek-20261011-132617/` altında.
 
 ## Komutlar
 
@@ -35,7 +35,7 @@ Statusline: Claude Code'un kendi model göstergesi istemcinin *istediği* modeli
 Claude Code'un her `/v1/messages` isteği `proxy/router.mjs`'den geçer; OAuth başlıkları aynen `api.anthropic.com`'a iletilir, gövdedeki `model` ve `output_config.effort` yeniden yazılır. Üç modül:
 
 - `proxy/skor.mjs` — saf `skorla(prompt)`: 0–100 zorluk skoru. OmniRoute'un `specificityRules` fikrinden uyarlandı: kategori başına tavanlı kural puanları (kod, matematik, **agir** = mimari/tasarım/kök neden/güvenlik açığı gibi tek başına zor işaretleri, akıl yürütme, ayrıntı, alan) ve kolay-işaret cezası. Kalıplar Türkçe+İngilizce. `kok()` kelime başında Unicode sınır + sonda ek toleransı, `tam()` iki uçta sınır (kolay kelimeleri için: "bul" → "bulut" eşleşmesin). JS `\b` ASCII bilir, Türkçe harfle başlayan kelimeleri kaçırır. Regex'ler yalnızca ilk 4000 karaktere uygulanır (dosya yolu regex'i uzun girdide karesel yavaşlar; skorlama event-loop'ta senkron). Kolay cezası ağır/alan sinyali varsa uygulanmaz.
-- `proxy/karar.mjs` — `kararVer(body, ipucu, oturumlar, cfg)`; `{atla, sebep}` ya da karar döner. Kurallar: (1) yalnızca `x-claude-code-request-class: main` istekleri yönlendirilir (başlık yoksa yedek sezgi: `agent-id` varsa ya da `tools` boşsa atla); `ROUTE_FROM` dışı model atlanır ve sebebi loglanır. (2) Karar anahtarı `x-claude-code-prompt-id` (yoksa mesaj indeksi + metin özeti, rewind'a karşı); aynı prompt boyunca karar sabit. Sinyalsiz, 25 karakterden kısa prompt ("devam et") önceki kararı sürdürür. (3) `ESLEME`: trivial/simple → sonnet-medium, moderate → sonnet-high, complex → opus-medium, expert → opus-high; yalnızca açık kolay işaret varsa `KOLAY_ESLEME` (trivial → haiku-low, simple → sonnet-low). Yanlış ucuz model daha zararlı olduğu için kanıtsız prompt ucuza inmez. (4) Histerezis: `messages` tahmini > `DOWNGRADE_MAX_TOKENS` ise model düşürülmez; ilk istekte taban istemcinin istediği model.
+- `proxy/karar.mjs` — `kararVer(body, ipucu, oturumlar, cfg)`; `{atla, sebep}` ya da karar döner. Kurallar: (1) yalnızca `x-claude-code-request-class: main` istekleri yönlendirilir (başlık yoksa yedek sezgi: `agent-id` varsa ya da `tools` boşsa atla); `ROUTE_FROM` dışı model atlanır ve sebebi loglanır. (2) Karar anahtarı `x-claude-code-prompt-id` (yoksa mesaj indeksi + metin özeti, rewind'a karşı); aynı prompt boyunca karar sabit. Sinyalsiz, 25 karakterden kısa prompt ("devam et") önceki kararı sürdürür. (3) Model seviyeye göre (`ESLEME`): trivial/simple/moderate → sonnet, complex/expert → opus; yalnızca açık kolay işaretli trivial prompt → haiku (`KOLAY_ESLEME`). Yanlış ucuz model daha zararlı olduğu için kanıtsız prompt ucuza inmez. Effort skora göre ve model başına (`effortBul`, `YUKSEK_EFFORT_ESIGI`): medium her modelin varsayılanı olduğu için geniş tutulur (kullanıcı tercihi); haiku hep medium, sonnet skor > 30 ise high, opus skor > 75 ise high; low kullanılmaz. Effort histerezisten sonra, gerçekten çalışacak modelin eşiğine göre belirlenir. (4) Histerezis: `messages` tahmini > `DOWNGRADE_MAX_TOKENS` ise model düşürülmez; ilk istekte taban istemcinin istediği model.
 - `proxy/router.mjs` — HTTP proxy. Hop-by-hop başlıklar ve `accept-encoding` iletilmez. İstemci iptalinde (Esc) upstream isteği kesilir; upstream akış ortasında koparsa istemci bağlantısı da kapatılır. Yalnızca tam `/v1/messages` yolu yönlendirilir (`count_tokens` değil). Yeniden yazılmış istek 400/404 alırsa API hata mesajı loglanır, orijinal gövdeyle bir kez yeniden denenir ve o prompt pasifleşir (`pasiflestir`). Yönlendirme hatası isteği düşürmez. Mesaj içeriği ve token değeri loglanmaz.
 
 `proxy/spike.mjs` ilk keşif aracıdır (yalnızca iletir ve istek yapısını loglar); `router.mjs` onun yerini aldı, tanılama için duruyor.
@@ -52,9 +52,11 @@ Claude Code'un her `/v1/messages` isteği `proxy/router.mjs`'den geçer; OAuth b
 ## Riskler ve doğrulanmayanlar
 
 - Abonelik OAuth'u ile gövde yeniden yazmanın kullanım koşullarına uygunluğu: açık hüküm bulunamadı; protokol dokümanı gövdeyi değiştirmemeyi öneriyor, [legal-and-compliance](https://code.claude.com/docs/en/legal-and-compliance) Anthropic'in önceden haber vermeden önlem alabileceğini söylüyor. Consumer Terms okunmadı. Kullanıcı riski bilerek devam etti (2026-10-11).
-- Çok turlu interaktif oturumda model değişimi (haiku ↔ opus, önceki turların thinking blokları başka modele gidiyor) test edilmedi. Reddedilirse 400 geri dönüşü devreye girer; `router.log`'da `geri_donus` aranmalı.
 - Skorlayıcı kural tabanlı; ağırlıklar elle ayarlandı, gerçek kullanımla kalibre edilmedi. Bilinen zayıflık: "tasarım" kelimesi UI işlerinde de ağır sayılır (sonnet-high).
 - `router.log` sınırsız büyür.
+- Oturum başında Claude Code'un 79 token'lık `auxiliary` isteği ara sıra 429 alıyor; router bu isteğe dokunmuyor (gövde değişmeden gidiyor). Proxy'siz de olup olmadığı karşılaştırılmadı.
+
+İnteraktif doğrulama (2026-10-11, stock-tracker-v2): aynı oturumda haiku → sonnet-medium → sonnet-high → opus-medium → opus-high geçişleri statusline'da beklenen skorlarla göründü, `router.log`'da hiç `geri_donus` yok (çok turlu thinking blokları sorun çıkarmadı).
 
 ## Elenen yaklaşımlar (kısa)
 
@@ -71,5 +73,4 @@ Claude Code'un her `/v1/messages` isteği `proxy/router.mjs`'den geçer; OAuth b
 ## Sıradaki işler
 
 1. Gerçek kullanımla çalıştır; `router.log`'daki karar dağılımına, `geri_donus` ve `cache_yazma` değerlerine bakıp `skor.mjs` ağırlıklarını ve `ESLEME` tablosunu kalibre et.
-2. İnteraktif çok turlu test (haiku → opus geçişi, 400 var mı).
-3. İstenirse log döndürme ve `claude-auto`'yu PATH'e alan kısayol.
+2. İstenirse log döndürme ve `claude-auto`'yu PATH'e alan kısayol.

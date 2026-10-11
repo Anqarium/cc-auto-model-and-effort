@@ -16,7 +16,8 @@ export function satir(d) {
   if (k.pasif) return `⚡ auto geri döndü (${k.sebep}) → ${ad(d.yanit_modeli)}`;
   // Yanıt geldiyse sunucunun gerçekten çalıştırdığı model, gelmediyse verilen karar gösterilir.
   const parcalar = [`⚡ auto → ${ad(d.yanit_modeli ?? k.model)}`, k.effort, `${k.seviye} (${k.skor ?? "-"})`];
-  if (k.sebep && k.sebep !== "skor") parcalar.push(k.sebep);
+  // "ayni-prompt" ajan döngüsünde her istekte görünür, bilgi taşımaz; yalnızca istisnai sebepler gösterilir.
+  if (k.sebep && !["skor", "ayni-prompt"].includes(k.sebep)) parcalar.push(k.sebep);
   return parcalar.filter(Boolean).join(" · ");
 }
 
