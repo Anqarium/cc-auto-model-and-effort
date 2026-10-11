@@ -24,6 +24,12 @@ test("Türkçe ekler tolere edilir (mimarisi, güvenliği)", () => {
   assert.ok(skorla("güvenlik açığı var mı").kategoriler.agir > 0);
 });
 
+test("ünsüz yumuşaması: açık/açığı/açıkları ve eşzamanlılık/eşzamanlılığı ağır sayılır", () => {
+  for (const p of ["güvenlik açık", "güvenlik açığı var", "güvenlik açıklarını değerlendir", "eşzamanlılık sorunu", "eşzamanlılığı test et"]) {
+    assert.ok(skorla(p).kategoriler.agir > 0, p);
+  }
+});
+
 test("kolay işaret yanlış pozitifleri: bulut, okul, gösterge eşleşmez", () => {
   for (const p of ["bulut altyapısına geçelim", "okul projesi için api", "gösterge paneli ekle"]) {
     assert.ok(!skorla(p).sinyaller.includes("kolay-isaret"), p);

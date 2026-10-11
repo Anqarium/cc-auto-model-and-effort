@@ -30,13 +30,14 @@ const MATEMATIK = [
 ];
 
 // Tek başına bile işin zor olduğuna işaret eden ağır istekler (mimari, kök neden, güvenlik açığı...).
+// Kökler ünsüz yumuşamasından önce kesilir: açık/açığı/açıkları → "açı", eşzamanlılık/-lığı → "eşzamanlı".
 const AGIR = [
   kok("mimari", "architecture"),
   kok("tasarla", "tasarım", "design"),
   kok("kök neden", "root cause"),
   kok("baştan yaz", "refactor", "yeniden yapılandır"),
-  kok("yarış durumu", "race condition", "deadlock", "eşzamanlılık", "concurren"),
-  kok("güvenlik açığı", "vulnerab", "zafiyet"),
+  kok("yarış durumu", "race condition", "deadlock", "eşzamanlı", "concurren"),
+  kok("güvenlik açı", "vulnerab", "zafiyet"),
 ];
 
 const AKIL = [
