@@ -1,9 +1,9 @@
 // Claude Code mod'u: her kullanıcı prompt'unu skorlar ve ana konuşmanın model isteklerini (turn.step)
-// seçilen model + effort ile gönderir. Seçim mantığı ve statusline metni lib/ altındaki saf modüllerde
+// seçilen model + effort ile gönderir. Seçim mantığı ve etiket metni lib/ altındaki saf modüllerde
 // (lib/secim.mjs, lib/gorunum.mjs); Node ile test edilebilsinler diye mod kodundan ayrı tutulur.
 import type { EngineInterface, Register } from 'claude-code'
 import { MODELLER, secimYap } from '../lib/secim.mjs'
-import { logOzeti, satir } from '../lib/gorunum.mjs'
+import { etiket, logOzeti } from '../lib/gorunum.mjs'
 
 // Yalnızca oturum bu modeldeyken yönlendirilir; /model ile başka modele geçmek yönlendirmeyi kapatır.
 const YONLENDIRILECEK = new Set<string>([MODELLER.sonnet])
@@ -21,11 +21,25 @@ async function kaydet($: EngineInterface, girdi: Record<string, unknown>) {
   await $.store.set(LOG_ANAHTARI, [...eski, { t, ...girdi }].slice(-LOG_AZAMI))
 }
 
+// Prompt satırının sağındaki mod etiketi (SessionMode). $.ui.status kullanılmaz: Claude Code onun başına
+// "⚠<eklenti adı>:" ekler. Etiket değişince ui.render yeniden çalıştırılır.
+let etiketMetni: string | undefined
+
+function goster($: EngineInterface, d: Parameters<typeof etiket>[0]) {
+  etiketMetni = etiket(d)
+  $.ui.invalidate('ui.render')
+}
+
 export const register: Register = on => {
   let karar: Karar | null = null
   let istemciModeli: string = MODELLER.sonnet
 
+  on('ui.render', { component: 'SessionMode' }, ($, e, next) =>
+    etiketMetni ? next({ ...e, props: { ...e.props, modes: [...e.props.modes, etiketMetni] } }) : next(e),
+  )
+
   on('session.start', async ($, e, next) => {
+    $.ui.status(undefined) // eski sürümün bıraktığı status satırını temizle
     await $.command.register({
       name: 'auto-log',
       description: 'auto-model-effort: model/effort kararlarının ve cache kullanımının özeti',
@@ -47,7 +61,7 @@ export const register: Register = on => {
         baglamTokeni: JSON.stringify(mesajlar).length / 4,
         dusurmeSiniri: DUSURME_SINIRI,
       })
-      $.ui.status(satir({ karar }))
+      goster($, { karar })
     }
     return next(e)
   })
@@ -57,7 +71,7 @@ export const register: Register = on => {
     istemciModeli = e.model
     if (!karar || karar.pasif) return yield* next(e)
     if (!YONLENDIRILECEK.has(e.model)) {
-      $.ui.status(satir({ atlandi: `model:${e.model}` }))
+      goster($, { atlandi: `model:${e.model}` })
       if (e.index === 0) await kaydet($, { adim: e.index, atlandi: `model:${e.model}` })
       return yield* next(e)
     }
@@ -80,7 +94,7 @@ export const register: Register = on => {
     }
 
     const u = sonuc.usage
-    $.ui.status(satir({ karar, yanit_modeli: u?.model }))
+    goster($, { karar, yanit_modeli: u?.model })
     await kaydet($, {
       adim: e.index,
       model,

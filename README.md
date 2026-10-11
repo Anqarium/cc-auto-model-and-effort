@@ -29,9 +29,9 @@ Kurulduktan sonra düz `claude` yeterli. Oturum Sonnet ile açıldığında her 
 | Zor (mimari + tasarım, kök neden + güvenlik…) | 41–75 | Opus / medium |
 | Çok zor ve çok yönlü | 76+ | Opus / high |
 
-Medium her modelin varsayılan effort'u olduğu için en geniş aralığı kaplar; low kullanılmaz. Alt ajanların modeline dokunulmaz. Seçilen model ve effort status line'da görünür: `⚡ auto → Opus 5.5 · high · expert (72)`.
+Medium her modelin varsayılan effort'u olduğu için en geniş aralığı kaplar; low kullanılmaz. Alt ajanların modeline dokunulmaz. Seçilen model ve effort prompt satırının sağında soluk bir etiket olarak görünür: `⚡ Opus 5.5 · medium · complex 49`.
 
-Mod yalnızca Sonnet oturumunu yönlendirir; oturumda `/model` ile başka modele geçersen yönlendirme durur (status line'da `auto kapalı` görünür). Bir model isteği reddedilirse aynı istek oturumun kendi modeliyle tekrar gönderilir.
+Mod yalnızca Sonnet oturumunu yönlendirir; oturumda `/model` ile başka modele geçersen yönlendirme durur (etiket `auto kapalı` olur). Bir model isteği reddedilirse aynı istek oturumun kendi modeliyle tekrar gönderilir.
 
 `/auto-log` komutu kararların dağılımını, gerçekte çalışan modeli ve cache kullanımını özetler.
 

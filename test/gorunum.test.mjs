@@ -1,27 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { logOzeti, satir } from "../lib/gorunum.mjs";
+import { etiket, logOzeti } from "../lib/gorunum.mjs";
 
-test("karar yokken bekleme mesajı", () => {
-  assert.equal(satir(null), "⚡ auto · ilk prompt bekleniyor");
-});
-
-test("yanıt gelmişse gerçek model, gelmemişse karar gösterilir", () => {
-  const karar = { model: "claude-opus-5-5", effort: "high", seviye: "expert", skor: 72, sebep: "skor" };
-  assert.equal(satir({ karar }), "⚡ auto → Opus 5.5 · high · expert (72)");
-  assert.equal(satir({ karar, yanit_modeli: "claude-sonnet-5-5" }), "⚡ auto → Sonnet 5.5 · high · expert (72)");
-});
-
-test("skor dışı sebep, atlama ve geri dönüş görünür", () => {
-  const karar = { model: "claude-opus-5-5", effort: "medium", seviye: "trivial", skor: 0, sebep: "cache-histerezisi" };
-  assert.match(satir({ karar }), /cache-histerezisi$/);
-  assert.equal(satir({ atlandi: "model:claude-opus-5-5" }), "⚡ auto kapalı (model:claude-opus-5-5)");
-  assert.equal(satir({ karar: { pasif: true, sebep: "red" }, yanit_modeli: "claude-sonnet-5-5" }), "⚡ auto geri döndü (red) → Sonnet 5.5");
-});
-
-test("'ayni-prompt' sebebi gürültü olduğu için gösterilmez", () => {
+test("'ayni-prompt' sebebi gürültü olduğu için etikete eklenmez", () => {
   const karar = { model: "claude-sonnet-5-5", effort: "medium", seviye: "simple", skor: 10, sebep: "ayni-prompt" };
-  assert.equal(satir({ karar }), "⚡ auto → Sonnet 5.5 · medium · simple (10)");
+  assert.equal(etiket({ karar }), "⚡ Sonnet 5.5 · medium · simple 10");
 });
 
 test("logOzeti: dağılım, gerçek model/cache toplamları, geri dönüş ve atlananlar", () => {
@@ -36,4 +19,14 @@ test("logOzeti: dağılım, gerçek model/cache toplamları, geri dönüş ve at
   assert.match(ozet, /4 model isteği, 2 prompt kararı/);
   assert.match(ozet, /Haiku 5\.5: 2 istek, yazma 100, okuma 300 \(okuma %75\)/);
   assert.match(ozet, /Geri dönüş: 1 · Atlanan: 1/);
+});
+
+test("etiket: önek yok, kısa; karar yokken gösterilmez", () => {
+  assert.equal(etiket(null), undefined);
+  const karar = { model: "claude-opus-5-5", effort: "medium", seviye: "complex", skor: 49, sebep: "skor" };
+  assert.equal(etiket({ karar }), "⚡ Opus 5.5 · medium · complex 49");
+  assert.equal(etiket({ karar, yanit_modeli: "claude-haiku-5-5" }), "⚡ Haiku 5.5 · medium · complex 49");
+  assert.equal(etiket({ karar: { ...karar, sebep: "kisa-devam" } }), "⚡ Opus 5.5 · medium · complex 49 · kisa-devam");
+  assert.equal(etiket({ atlandi: "model:claude-opus-5-5" }), "auto kapalı");
+  assert.equal(etiket({ karar: { pasif: true, sebep: "red" }, yanit_modeli: "claude-sonnet-5-5" }), "auto ↩ Sonnet 5.5");
 });
