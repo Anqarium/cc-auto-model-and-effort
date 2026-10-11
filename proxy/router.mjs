@@ -6,6 +6,7 @@
 // listesi, varsayılan claude-sonnet-5-5), MODE (route | log: log'ta gövdeye dokunulmaz),
 // DOWNGRADE_MAX_TOKENS (30000), ROUTER_LOG (proxy/router.log),
 // CLAUDE_AUTO_DURUM (oturum başına son kararın yazıldığı klasör; statusline.mjs okur, varsayılan %TEMP%/claude-auto)
+import { createHash } from "node:crypto";
 import http from "node:http";
 import https from "node:https";
 import { appendFileSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
@@ -47,6 +48,13 @@ export function eskiDurumlariSil(dizin, azamiYasMs = 24 * 3600 * 1000) {
   } catch (e) {
     if (e.code !== "ENOENT") console.error(`eski durum dosyaları silinemedi: ${e.message}`);
   }
+}
+
+// Cache tanısı: önekin (system + tools) kısa özeti. İçerik loglanmaz; iki istek arasında özet değiştiyse
+// cache kaçağının sebebi model değişimi değil, Claude Code'un öneki değiştirmesidir.
+const ozetle = (deger) => (deger === undefined ? null : createHash("sha1").update(JSON.stringify(deger)).digest("hex").slice(0, 10));
+export function onekOzeti(json) {
+  return { system: ozetle(json.system), tools: ozetle(json.tools), arac_sayisi: Array.isArray(json.tools) ? json.tools.length : 0 };
 }
 
 // SSE message_start'tan gerçek modeli ve cache kullanımını çıkarır (kalibrasyon için).
@@ -125,7 +133,7 @@ export function createRouter(cfg) {
       if (req.method === "POST" && yol === "/v1/messages" && orijinal.length) {
         try {
           const json = JSON.parse(orijinal.toString("utf8"));
-          Object.assign(kayit, { istek_modeli: json.model, sinif: ipucu.sinif, tahmini_token: Math.round(orijinal.length / 4) });
+          Object.assign(kayit, { istek_modeli: json.model, sinif: ipucu.sinif, tahmini_token: Math.round(orijinal.length / 4), onek: onekOzeti(json) });
           const karar = kararVer(json, ipucu, oturumlar, cfg);
           if (karar.atla) {
             // Ana konuşmanın atlanması (ör. /model opus ile ROUTE_FROM dışı) sessiz kalmasın.

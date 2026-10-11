@@ -5,7 +5,7 @@ import http from "node:http";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createRouter, ayarlar, yanitOzeti, SAGLIK_YOLU } from "../router.mjs";
+import { createRouter, ayarlar, onekOzeti, yanitOzeti, SAGLIK_YOLU } from "../router.mjs";
 
 const MESSAGE_START =
   'event: message_start\ndata: {"type":"message_start","message":{"model":"claude-opus-5-5","usage":{"input_tokens":5,"cache_creation_input_tokens":100,"cache_read_input_tokens":7,"cache_creation":{"ephemeral_5m_input_tokens":100}}}}\n\n';
@@ -300,6 +300,24 @@ test("sağlık yolu router'ı tanıtır", async () => {
       }).on("error", red);
     });
     assert.equal(sonuc.router, "cc-auto-model-and-effort");
+  } finally {
+    await k.kapat();
+  }
+});
+
+test("önek özeti: system/tools değişince özet değişir, içerik loga girmez", async () => {
+  const a = onekOzeti({ system: [{ type: "text", text: "gizli sistem metni" }], tools: [{ name: "Bash" }] });
+  const b = onekOzeti({ system: [{ type: "text", text: "gizli sistem metni" }], tools: [{ name: "Bash" }, { name: "Read" }] });
+  assert.equal(a.system, b.system);
+  assert.notEqual(a.tools, b.tools);
+  assert.deepEqual([a.arac_sayisi, b.arac_sayisi], [1, 2]);
+  assert.deepEqual(onekOzeti({}), { system: null, tools: null, arac_sayisi: 0 });
+
+  const k = await kur();
+  try {
+    await gonder(k.port, istek("merhaba", { system: [{ type: "text", text: "gizli sistem metni" }] }), ANA);
+    assert.match(k.log(), /"onek":\{"system":"[0-9a-f]{10}","tools":"[0-9a-f]{10}","arac_sayisi":1\}/);
+    assert.doesNotMatch(k.log(), /gizli sistem metni/);
   } finally {
     await k.kapat();
   }
