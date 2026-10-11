@@ -31,7 +31,7 @@ Kurulduktan sonra düz `claude` yeterli. Oturum hangi modelde açılırsa açıl
 
 Medium her modelin varsayılan effort'u olduğu için en geniş aralığı kaplar; low kullanılmaz. Alt ajanların modeline dokunulmaz. Seçilen model ve effort prompt satırının sağında soluk bir etiket olarak görünür: `⚡ Opus 5.5 · medium · complex 49`.
 
-Belirli bir modeli zorlamak istediğinde `/auto kapat` yaz: o oturumda yönlendirme durur ve seçtiğin model kullanılır (etiket `auto kapalı` olur); `/auto ac` geri açar, argümansız `/auto` aç/kapat yapar. Yeni oturum her zaman açık başlar. Bir model isteği reddedilirse aynı istek oturumun kendi modeliyle tekrar gönderilir.
+Belirli bir modeli zorlamak istediğinde `/auto kapat` yaz: o oturumda yönlendirme durur ve seçtiğin model kullanılır (etiket `auto kapalı` olur); `/auto ac` geri açar, argümansız `/auto` aç/kapat yapar. Yeni oturum her zaman açık başlar; açılışta ve `/auto` sonrası birkaç saniye `⚡ auto açık · /auto ile kapat` (ya da `auto kapalı · /auto ile aç`) bildirimi görünür. Bir model isteği reddedilirse aynı istek oturumun kendi modeliyle tekrar gönderilir.
 
 `/auto-log` komutu kararların dağılımını, gerçekte çalışan modeli ve cache kullanımını özetler.
 

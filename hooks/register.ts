@@ -1,15 +1,17 @@
 // Claude Code mod'u: her kullanıcı prompt'unu skorlar ve ana konuşmanın model isteklerini (turn.step)
 // seçilen model + effort ile gönderir. Seçim mantığı ve etiket metni lib/ altındaki saf modüllerde
 // (lib/secim.mjs, lib/gorunum.mjs); Node ile test edilebilsinler diye mod kodundan ayrı tutulur.
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, Timer } from 'claude-code'
 import { MODELLER, secimYap } from '../lib/secim.mjs'
-import { autoKomutu, etiket, logOzeti } from '../lib/gorunum.mjs'
+import { autoKomutu, durumBildirimi, etiket, logOzeti } from '../lib/gorunum.mjs'
 
 // Konuşma bu kadar token'ı aşınca model düşürülmez (yeni model için cache baştan yazılır).
 const DUSURME_SINIRI = 30000
 // Kalibrasyon logu: $.store'da (oturumlar arası), son bu kadar ana model isteği.
 const LOG_ANAHTARI = 'kararlar'
 const LOG_AZAMI = 2000
+// Açılışta ve /auto sonrası durum bildiriminin ekranda kalma süresi.
+const BILDIRIM_MS = 4000
 
 type Karar = ReturnType<typeof secimYap>
 
@@ -20,11 +22,25 @@ async function kaydet($: EngineInterface, girdi: Record<string, unknown>) {
 }
 
 // Prompt satırının sağındaki mod etiketi (SessionMode). $.ui.status kullanılmaz: Claude Code onun başına
-// "⚠<eklenti adı>:" ekler. Etiket değişince ui.render yeniden çalıştırılır.
-let etiketMetni: string | undefined
+// "⚠<eklenti adı>:" ekler. İki katman: kalıcı etiket (son karar ya da "auto kapalı") ve birkaç saniye
+// onun yerine görünen geçici bildirim. Değişince ui.render yeniden çalıştırılır.
+// $ yalnızca dosyanın üst düzeyindeki fonksiyonlara verilebildiği için (doğrulayıcı kuralı) bunlar burada.
+let kalici: string | undefined
+let gecici: string | undefined
+let geciciZamanlayici: Timer | undefined
 
 function goster($: EngineInterface, d: Parameters<typeof etiket>[0]) {
-  etiketMetni = etiket(d)
+  kalici = etiket(d)
+  $.ui.invalidate('ui.render')
+}
+
+function bildir($: EngineInterface, metin: string) {
+  geciciZamanlayici?.cancel()
+  gecici = metin
+  geciciZamanlayici = $.clock.after(BILDIRIM_MS, () => {
+    gecici = undefined
+    $.ui.invalidate('ui.render')
+  })
   $.ui.invalidate('ui.render')
 }
 
@@ -34,9 +50,10 @@ export const register: Register = on => {
   // Oturum hangi modelde olursa olsun yönlendirilir; durdurmak için /auto kapat (yalnızca bu oturum).
   let acik = true
 
-  on('ui.render', { component: 'SessionMode' }, ($, e, next) =>
-    etiketMetni ? next({ ...e, props: { ...e.props, modes: [...e.props.modes, etiketMetni] } }) : next(e),
-  )
+  on('ui.render', { component: 'SessionMode' }, ($, e, next) => {
+    const metin = gecici ?? kalici
+    return metin ? next({ ...e, props: { ...e.props, modes: [...e.props.modes, metin] } }) : next(e)
+  })
 
   on('session.start', async ($, e, next) => {
     $.ui.status(undefined) // eski sürümün bıraktığı status satırını temizle
@@ -49,6 +66,7 @@ export const register: Register = on => {
       description: 'auto-model-effort: bu oturumda otomatik model/effort seçimini aç ya da kapat',
       argumentHint: '[ac|kapat]',
     })
+    bildir($, durumBildirimi(acik))
     return next(e)
   })
 
@@ -60,6 +78,7 @@ export const register: Register = on => {
     const sonuc = autoKomutu(e.args, acik)
     acik = sonuc.acik
     goster($, acik ? (karar ? { karar } : null) : { atlandi: 'kapali' })
+    bildir($, durumBildirimi(acik))
     return { text: sonuc.mesaj }
   })
 

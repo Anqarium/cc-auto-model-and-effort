@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { autoKomutu, etiket, logOzeti } from "../lib/gorunum.mjs";
+import { autoKomutu, durumBildirimi, etiket, logOzeti } from "../lib/gorunum.mjs";
 
 test("'ayni-prompt' sebebi gürültü olduğu için etikete eklenmez", () => {
   const karar = { model: "claude-sonnet-5-5", effort: "medium", seviye: "simple", skor: 10, sebep: "ayni-prompt" };
@@ -39,4 +39,9 @@ test("autoKomutu: argümansız aç/kapat, ac/aç/on açar, kapat/off kapatır, b
   const bilinmeyen = autoKomutu("belki", true);
   assert.equal(bilinmeyen.acik, true);
   assert.match(bilinmeyen.mesaj, /Kullanım: \/auto \[ac\|kapat\]/);
+});
+
+test("durumBildirimi: açık/kapalı ve nasıl değiştirileceği", () => {
+  assert.equal(durumBildirimi(true), "⚡ auto açık · /auto ile kapat");
+  assert.equal(durumBildirimi(false), "auto kapalı · /auto ile aç");
 });
