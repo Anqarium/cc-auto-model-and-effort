@@ -17,15 +17,20 @@ node --test --test-name-pattern "iptal" proxy/test/router.test.mjs   # tek test
 .\proxy\claude-auto.ps1 --version                 # API'ye istek atmadan sarmalayıcıyı dener
 node proxy/router.mjs                             # router'ı elle başlat (127.0.0.1:8787)
 MODE=log node proxy/router.mjs                    # yalnızca karar logla, gövdeye dokunma
+echo '{"session_id":"x"}' | node proxy/statusline.mjs   # statusline çıktısını elle dene
 ```
 
-Router ortam değişkenleri: `PORT` (8787), `UPSTREAM_URL` (https://api.anthropic.com), `ROUTE_FROM` (virgüllü model listesi, varsayılan `claude-sonnet-5-5`), `MODE` (`route`|`log`), `DOWNGRADE_MAX_TOKENS` (30000), `ROUTER_LOG` (`proxy/router.log`).
+Kullanıcının PowerShell profilinde (`Documents 1\PowerShell\Microsoft.PowerShell_profile.ps1`) `claude-auto` fonksiyonu bu betiği çağırır; aynı dosyadaki `omni` fonksiyonu kullanıcınındır, dokunma.
+
+Router ortam değişkenleri: `PORT` (8787), `UPSTREAM_URL` (https://api.anthropic.com), `ROUTE_FROM` (virgüllü model listesi, varsayılan `claude-sonnet-5-5`), `MODE` (`route`|`log`), `DOWNGRADE_MAX_TOKENS` (30000), `ROUTER_LOG` (`proxy/router.log`), `CLAUDE_AUTO_DURUM` (statusline durum klasörü, varsayılan `%TEMP%\claude-auto`), `CLAUDE_AUTO_EBEVEYN` (izlenecek üst süreç PID'i; ölünce router kapanır).
 
 Gerçek çalışan modeli görmek için `proxy/router.log` içindeki `yanit_modeli` alanına bak (yanında gerçek `usage`: `cache_yazma`/`cache_okuma`). Claude Code'un `modelUsage` ve statusline göstergeleri istemcinin *istediği* modeli gösterir, router'ın değiştirdiğini yansıtmaz.
 
 ## Mimari
 
-`claude-auto.ps1` → boş bir port seçip kendi router'ını başlatır (`/__router` sağlık yolu ile doğrular), `ANTHROPIC_BASE_URL` ve `CLAUDE_CODE_GATEWAY_HINT_HEADERS=1` ayarlayıp `claude --model sonnet` çalıştırır (kullanıcı `--model` verdiyse dokunmaz), çıkışta router'ı durdurur ve değişkenleri geri alır. Her pencerenin ayrı router'ı vardır. Betikte bilerek `param()` bloğu yok: `[Parameter]` PowerShell'e `-p`'yi ortak parametre öneki sandırır.
+`claude-auto.ps1` → boş bir port seçip kendi router'ını başlatır (`/__router` sağlık yolu ile doğrular), `ANTHROPIC_BASE_URL` ve `CLAUDE_CODE_GATEWAY_HINT_HEADERS=1` ayarlayıp `claude --settings <geçici statusline ayarı> --model sonnet` çalıştırır (kullanıcı `--model` verdiyse dokunmaz), çıkışta router'ı durdurur ve değişkenleri geri alır. Her pencerenin ayrı router'ı vardır. Pencere X ile kapatılırsa PowerShell `finally` çalışmaz; bu yüzden router `CLAUDE_AUTO_EBEVEYN` PID'ini 3 sn'de bir yoklar ve süreç yoksa kendini kapatır. Betikte bilerek `param()` bloğu yok: `[Parameter]` PowerShell'e `-p`'yi ortak parametre öneki sandırır.
+
+Statusline: Claude Code'un kendi model göstergesi istemcinin *istediği* modeli gösterir. Bu yüzden router her ana konuşma kararını ve yanıttaki gerçek modeli `%TEMP%\claude-auto\<session_id>.json` dosyasına yazar (`x-claude-code-session-id` = statusline girdisindeki `session_id`, transkript dosya adıyla da aynı; doğrulandı). `proxy/statusline.mjs` bunu okuyup `⚡ auto → Opus 5.5 · high · expert (72)` basar. Statusline yalnızca `claude-auto` oturumlarına `--settings` ile eklenir; kullanıcının global `statusLine` ayarı yok (ekrandaki "Clear · % of context" bandı bir eklentiden geliyor). Bir günden eski durum dosyaları router açılışında silinir.
 
 Claude Code'un her `/v1/messages` isteği `proxy/router.mjs`'den geçer; OAuth başlıkları aynen `api.anthropic.com`'a iletilir, gövdedeki `model` ve `output_config.effort` yeniden yazılır. Üç modül:
 

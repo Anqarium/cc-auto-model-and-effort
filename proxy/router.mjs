@@ -4,10 +4,12 @@
 //
 // Ortam değişkenleri: PORT (8787), UPSTREAM_URL (https://api.anthropic.com), ROUTE_FROM (virgüllü model
 // listesi, varsayılan claude-sonnet-5-5), MODE (route | log: log'ta gövdeye dokunulmaz),
-// DOWNGRADE_MAX_TOKENS (30000), ROUTER_LOG (proxy/router.log)
+// DOWNGRADE_MAX_TOKENS (30000), ROUTER_LOG (proxy/router.log),
+// CLAUDE_AUTO_DURUM (oturum başına son kararın yazıldığı klasör; statusline.mjs okur, varsayılan %TEMP%/claude-auto)
 import http from "node:http";
 import https from "node:https";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MODELLER, Oturumlar, kararVer, pasiflestir, uygula } from "./karar.mjs";
@@ -28,7 +30,23 @@ export function ayarlar(env = process.env) {
     mod: env.MODE ?? "route",
     dusurmeTokenSiniri: Number(env.DOWNGRADE_MAX_TOKENS ?? 30000),
     logDosyasi: env.ROUTER_LOG ?? join(dirname(fileURLToPath(import.meta.url)), "router.log"),
+    durumDizini: durumDizini(env),
   };
+}
+
+export const durumDizini = (env = process.env) => env.CLAUDE_AUTO_DURUM ?? join(tmpdir(), "claude-auto");
+const GECERLI_OTURUM = /^[\w-]{1,100}$/; // dosya adına girdiği için başlık değeri doğrulanır
+
+// Bir günden eski durum dosyalarını siler (her oturum tek küçük dosya bırakır).
+export function eskiDurumlariSil(dizin, azamiYasMs = 24 * 3600 * 1000) {
+  try {
+    for (const ad of readdirSync(dizin)) {
+      const yol = join(dizin, ad);
+      if (ad.endsWith(".json") && Date.now() - statSync(yol).mtimeMs > azamiYasMs) unlinkSync(yol);
+    }
+  } catch (e) {
+    if (e.code !== "ENOENT") console.error(`eski durum dosyaları silinemedi: ${e.message}`);
+  }
 }
 
 // SSE message_start'tan gerçek modeli ve cache kullanımını çıkarır (kalibrasyon için).
@@ -65,6 +83,20 @@ export function createRouter(cfg) {
     }
   }
 
+  // Oturumun son kararı statusline için dosyaya yazılır (önceki alanların üzerine birleştirilir).
+  const durumlar = new Map();
+  function durumYaz(oturumId, ek) {
+    if (!GECERLI_OTURUM.test(oturumId)) return;
+    const d = { ...durumlar.get(oturumId), ...ek, t: Date.now() };
+    durumlar.set(oturumId, d);
+    try {
+      mkdirSync(cfg.durumDizini, { recursive: true });
+      writeFileSync(join(cfg.durumDizini, `${oturumId}.json`), JSON.stringify(d));
+    } catch (e) {
+      console.error(`durum yazılamadı: ${e.message}`);
+    }
+  }
+
   return http.createServer((req, res) => {
     if (req.url === SAGLIK_YOLU) {
       res.writeHead(200, { "content-type": "application/json" });
@@ -97,9 +129,14 @@ export function createRouter(cfg) {
           const karar = kararVer(json, ipucu, oturumlar, cfg);
           if (karar.atla) {
             // Ana konuşmanın atlanması (ör. /model opus ile ROUTE_FROM dışı) sessiz kalmasın.
-            if (ipucu.sinif === "main" || !ipucu.sinif) kayit.atlandi = karar.sebep;
+            if (ipucu.sinif === "main" || !ipucu.sinif) {
+              kayit.atlandi = karar.sebep;
+              if (ipucu.sinif === "main") durumYaz(ipucu.oturumId, { atlandi: karar.sebep, karar: undefined, yanit_modeli: undefined });
+            }
           } else {
             kayit.karar = karar;
+            const { model, effort, seviye, skor, sebep, pasif } = karar;
+            durumYaz(ipucu.oturumId, { karar: { model, effort, seviye, skor, sebep, pasif }, atlandi: undefined, yanit_modeli: undefined });
             if (cfg.mod === "route" && uygula(json, karar)) {
               kayit.yeniden_yazildi = { model: json.model, effort: json.output_config.effort };
               govde = Buffer.from(JSON.stringify(json));
@@ -130,6 +167,7 @@ export function createRouter(cfg) {
               yanit.on("end", () => {
                 log({ ...kayit, durum: yanit.statusCode, geri_donus: true, api_hatasi: hata.slice(0, 600) });
                 pasiflestir(oturumlar, ipucu.oturumId, `red:${yanit.statusCode}`);
+                durumYaz(ipucu.oturumId, { karar: { pasif: true, sebep: `red:${yanit.statusCode}` }, yanit_modeli: undefined });
                 if (!res.destroyed) aktif = ilet(orijinal, false);
               });
               return;
@@ -148,6 +186,8 @@ export function createRouter(cfg) {
               if (ozet) {
                 bulundu = true;
                 log({ yol: kayit.yol, oturum: ipucu.oturumId.slice(0, 8), ...ozet });
+                // Yalnızca ana konuşmanın yanıtı statusline'a gider (alt ajan/arka plan değil).
+                if (kayit.karar || kayit.atlandi) durumYaz(ipucu.oturumId, { yanit_modeli: ozet.yanit_modeli });
               }
             };
             yanit.on("data", (c) => {
@@ -186,6 +226,19 @@ export function createRouter(cfg) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const cfg = ayarlar();
+  eskiDurumlariSil(cfg.durumDizini);
+  // claude-auto.ps1 kendi PID'ini verir: terminal X ile kapatılınca PowerShell finally çalışmadan ölür;
+  // router o zaman yetim kalmasın diye üst süreç kaybolunca kendini kapatır.
+  const ebeveyn = Number(process.env.CLAUDE_AUTO_EBEVEYN);
+  if (ebeveyn > 0) {
+    setInterval(() => {
+      try {
+        process.kill(ebeveyn, 0); // sinyal göndermez, yalnızca süreç var mı diye bakar
+      } catch {
+        process.exit(0);
+      }
+    }, 3000).unref();
+  }
   createRouter(cfg).listen(cfg.port, "127.0.0.1", () =>
     console.log(`router http://127.0.0.1:${cfg.port} -> ${cfg.upstream.origin} (mod=${cfg.mod}, yönlendirilecek=${cfg.yonlendirilecek})`)
   );

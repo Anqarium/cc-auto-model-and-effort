@@ -30,8 +30,10 @@ async function kur({ env = {}, isleyici } = {}) {
     req.on("end", () => isle(req, res, Buffer.concat(p).toString(), alinan));
   });
   const upPort = await dinle(upstream);
-  const logDosyasi = join(mkdtempSync(join(tmpdir(), "router-")), "router.log");
-  const cfg = ayarlar({ UPSTREAM_URL: `http://127.0.0.1:${upPort}`, ROUTER_LOG: logDosyasi, ...env });
+  const gecici = mkdtempSync(join(tmpdir(), "router-"));
+  const logDosyasi = join(gecici, "router.log");
+  const durum = join(gecici, "durum");
+  const cfg = ayarlar({ UPSTREAM_URL: `http://127.0.0.1:${upPort}`, ROUTER_LOG: logDosyasi, CLAUDE_AUTO_DURUM: durum, ...env });
   const router = createRouter(cfg);
   const port = await dinle(router);
   const kapat = () => {
@@ -39,7 +41,8 @@ async function kur({ env = {}, isleyici } = {}) {
     router.closeAllConnections();
     return Promise.all([upstream, router].map((s) => new Promise((c) => s.close(c))));
   };
-  return { alinan, port, logDosyasi, kapat, log: () => readFileSync(logDosyasi, "utf8") };
+  const durumu = (id) => JSON.parse(readFileSync(join(durum, `${id}.json`), "utf8"));
+  return { alinan, port, logDosyasi, kapat, durumu, log: () => readFileSync(logDosyasi, "utf8") };
 }
 
 function gonder(port, govde, basliklar = {}, yol = "/v1/messages?beta=true") {
@@ -228,6 +231,58 @@ test("upstream akış ortasında koparsa istemci asılı kalmaz", async () => {
     assert.equal(sonuc, "kapandi");
   } finally {
     await k.kapat();
+  }
+});
+
+test("statusline durumu: ana konuşmanın kararı ve gerçek modeli yazılır, alt ajan yanıtı ezmez", async () => {
+  const k = await kur();
+  try {
+    await gonder(k.port, istek(PROMPT_EXPERT), ANA);
+    assert.deepEqual(
+      [k.durumu("sess-1").karar.model, k.durumu("sess-1").karar.seviye, k.durumu("sess-1").yanit_modeli],
+      ["claude-opus-5-5", "expert", "claude-opus-5-5"]
+    );
+    // Sahte upstream hep opus döner; alt ajan yanıtı ana durumu değiştirmemeli.
+    const once = k.durumu("sess-1").t;
+    await gonder(k.port, istek("x"), { ...ANA, "x-claude-code-request-class": "subagent" });
+    assert.equal(k.durumu("sess-1").t, once);
+
+    await gonder(k.port, istek(PROMPT_EXPERT, { model: "claude-opus-5-5" }), { ...ANA, "x-claude-code-prompt-id": "p-2" });
+    assert.equal(k.durumu("sess-1").atlandi, "model:claude-opus-5-5");
+    assert.equal(k.durumu("sess-1").karar, undefined);
+  } finally {
+    await k.kapat();
+  }
+});
+
+test("geçersiz oturum kimliği dosya adına girmez", async () => {
+  const k = await kur();
+  try {
+    await gonder(k.port, istek(PROMPT_EXPERT), { ...ANA, "x-claude-code-session-id": "../kotu" });
+    assert.throws(() => k.durumu("../kotu"));
+  } finally {
+    await k.kapat();
+  }
+});
+
+test("üst süreç (claude-auto penceresi) ölünce router kendini kapatır", async () => {
+  const { spawn } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const routerYolu = fileURLToPath(new URL("../router.mjs", import.meta.url));
+  const ebeveyn = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"]);
+  const router = spawn(process.execPath, [routerYolu], {
+    env: { ...process.env, PORT: "0", CLAUDE_AUTO_EBEVEYN: String(ebeveyn.pid), CLAUDE_AUTO_DURUM: mkdtempSync(join(tmpdir(), "durum-")), ROUTER_LOG: join(tmpdir(), "router-ebeveyn-test.log") },
+    stdio: "ignore",
+  });
+  const kapandi = new Promise((coz) => router.on("exit", () => coz(true)));
+  try {
+    await bekle(300);
+    ebeveyn.kill();
+    const sonuc = await Promise.race([kapandi, bekle(6000).then(() => false)]);
+    assert.ok(sonuc, "router yetim kaldı");
+  } finally {
+    ebeveyn.kill();
+    router.kill();
   }
 });
 
