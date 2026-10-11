@@ -16,13 +16,13 @@ Bağımlılık yok (yalnızca Node ≥ 22, yerleşik modüller). Windows/PowerSh
 node --test test/*.test.mjs                       # tüm testler
 node --test --test-name-pattern "effort" test/secim.test.mjs   # tek test
 claude plugin validate .                          # manifest, marketplace ve hooks modülünü doğrular
-claude plugin list                                # auto-model-effort@anqarium: "Read from: <bu klasör>"
-.\claude-auto.ps1 [claude argümanları]            # = claude --model sonnet ...; artık gerekli değil, yalnızca başlangıç modelini sonnet yapar (--plugin-dir YOK: kurulu mod iki kez yüklenirdi)
+claude plugin list                                # auto-model-effort@anqarium: "Read from: <bu klasör>"; token-weather@anqarium (GitHub'dan kopya)
+claude plugin marketplace update anqarium         # marketplace.json değişince
 ```
 
 Gerçek API ile doğrulama: `claude -p "<prompt>" --output-format json` → `modelUsage` gerçek modeli gösterir (mod Claude Code'un içinde çalıştığı için istemci gerçek modeli bilir). Giden isteğin `output_config.effort`'unu görmek için gözlemci: `node tools/spike.mjs` arka planda, sonra `ANTHROPIC_BASE_URL=http://127.0.0.1:8787 claude -p ...`; `tools/spike.log`'da `govde.model` / `govde.output_config.effort` (gövdeye dokunmaz). Bu sırada tool search kapanır, bağlam büyür (aşağıda). `claude -p "/auto-log"` PowerShell'den çalıştırılmalı: Git Bash `/auto-log`'u bir Windows yoluna çevirir.
 
-Kullanıcının PowerShell profilinde (`Documents 1\PowerShell\Microsoft.PowerShell_profile.ps1`) `claude-auto` fonksiyonu kökteki `claude-auto.ps1`'i çağırır; aynı dosyadaki `omni` fonksiyonu kullanıcınındır, dokunma. PowerShell betiklerinde bilerek `param()` bloğu yok: `[Parameter]` PowerShell'e `-p`'yi ortak parametre öneki sandırır.
+`anqarium` marketplace'i (`.claude-plugin/marketplace.json`) iki eklenti listeler: `auto-model-effort` (`"./"`, yerel klasörden okunur) ve kullanıcının diğer mod'u `token-weather` (GitHub kaynağı `Anqarium/token-weather`, private; kurulum repodan kopya alır, kaynak klasörü `~/.claude/mods/token-weather`). İki marketplace aynı adı taşıyamaz; kullanıcı eklentilerinin hepsinin `anqarium` altında görünmesini istiyor. `claude-auto` sarmalayıcısı ve profil fonksiyonu 2026-10-11'de kaldırıldı (mod her modelde çalıştığı için gereksizdi); kullanıcının PowerShell profilindeki `omni` fonksiyonu kullanıcınındır, dokunma.
 
 ## Mimari
 

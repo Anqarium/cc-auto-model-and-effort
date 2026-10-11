@@ -1,11 +1,17 @@
 {
   "name": "anqarium",
   "owner": { "name": "Anqarium" },
+  "description": "Anqarium'un Claude Code eklentileri",
   "plugins": [
     {
       "name": "auto-model-effort",
       "source": "./",
       "description": "Prompt zorluğuna göre ana oturumun modelini ve effort seviyesini otomatik seçer."
+    },
+    {
+      "name": "token-weather",
+      "source": { "source": "github", "repo": "Anqarium/token-weather" },
+      "description": "Bağlam penceresi doluluğunun hava durumu olarak canlı gösterimi"
     }
   ]
 }
