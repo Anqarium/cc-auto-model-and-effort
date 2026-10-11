@@ -27,7 +27,6 @@ test("etiket: önek yok, kısa; karar yokken gösterilmez", () => {
   assert.equal(etiket({ karar }), "⚡ Opus 5.5 · medium · complex 49");
   assert.equal(etiket({ karar, yanit_modeli: "claude-haiku-5-5" }), "⚡ Haiku 5.5 · medium · complex 49");
   assert.equal(etiket({ karar: { ...karar, sebep: "kisa-devam" } }), "⚡ Opus 5.5 · medium · complex 49 · kisa-devam");
-  assert.equal(etiket({ atlandi: "model:claude-opus-5-5" }), "auto kapalı");
   assert.equal(etiket({ karar: { pasif: true, sebep: "red" }, yanit_modeli: "claude-sonnet-5-5" }), "auto ↩ Sonnet 5.5");
 });
 

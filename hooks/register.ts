@@ -22,7 +22,7 @@ async function kaydet($: EngineInterface, girdi: Record<string, unknown>) {
 }
 
 // Prompt satırının sağındaki mod etiketi (SessionMode). $.ui.status kullanılmaz: Claude Code onun başına
-// "⚠<eklenti adı>:" ekler. İki katman: kalıcı etiket (son karar ya da "auto kapalı") ve birkaç saniye
+// "⚠<eklenti adı>:" ekler. İki katman: kalıcı etiket (son karar; kapalıyken yok) ve birkaç saniye
 // onun yerine görünen geçici bildirim. Değişince ui.render yeniden çalıştırılır.
 // $ yalnızca dosyanın üst düzeyindeki fonksiyonlara verilebildiği için (doğrulayıcı kuralı) bunlar burada.
 let kalici: string | undefined
@@ -77,7 +77,7 @@ export const register: Register = on => {
   on('command.run', { command: 'auto' }, async ($, e) => {
     const sonuc = autoKomutu(e.args, acik)
     acik = sonuc.acik
-    goster($, acik ? (karar ? { karar } : null) : { atlandi: 'kapali' })
+    goster($, acik && karar ? { karar } : null)
     bildir($, durumBildirimi(acik))
     return { text: sonuc.mesaj }
   })
