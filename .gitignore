@@ -148,7 +148,7 @@ vite.config.ts.timestamp-*
 # Turbo Repo
 .turbo
 
-# Proje
+# Project
 .env
 .env.*
 .claude/settings.local.json

@@ -1,6 +1,8 @@
 {
   "name": "auto-model-effort",
   "version": "0.1.0",
-  "description": "Prompt zorluğuna göre ana oturumun modelini ve effort seviyesini otomatik seçer.",
-  "author": { "name": "Anqarium" }
+  "description": "Automatically picks the main session's model and effort from each prompt's difficulty.",
+  "author": {
+    "name": "Anqarium"
+  }
 }

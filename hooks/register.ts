@@ -1,142 +1,143 @@
-// Claude Code mod'u: her kullanıcı prompt'unu skorlar ve ana konuşmanın model isteklerini (turn.step)
-// seçilen model + effort ile gönderir. Seçim mantığı ve etiket metni lib/ altındaki saf modüllerde
-// (lib/secim.mjs, lib/gorunum.mjs); Node ile test edilebilsinler diye mod kodundan ayrı tutulur.
+// Claude Code mod: scores every user prompt and sends the main conversation's model requests (turn.step)
+// with the chosen model + effort. The decision logic and the display text live in pure modules under lib/
+// (lib/select.mjs, lib/display.mjs), kept out of the mod code so they can be tested with Node.
 import type { EngineInterface, Register, Timer } from 'claude-code'
-import { MODELLER, secimYap } from '../lib/secim.mjs'
-import { autoKomutu, durumBildirimi, etiket, logOzeti } from '../lib/gorunum.mjs'
+import { MODELS, decide } from '../lib/select.mjs'
+import { autoCommand, label, logSummary, statusNotice } from '../lib/display.mjs'
 
-// Konuşma bu kadar token'ı aşınca model düşürülmez (yeni model için cache baştan yazılır).
-const DUSURME_SINIRI = 30000
-// Kalibrasyon logu: $.store'da (oturumlar arası), son bu kadar ana model isteği.
-const LOG_ANAHTARI = 'kararlar'
-const LOG_AZAMI = 2000
-// Açılışta ve /auto sonrası durum bildiriminin ekranda kalma süresi.
-const BILDIRIM_MS = 4000
+// Above this many conversation tokens the model is not downgraded (the new model would rewrite the cache).
+const DOWNGRADE_LIMIT = 30000
+// Calibration log in $.store (kept across sessions): the last this-many main-conversation model requests.
+const LOG_KEY = 'decisions'
+const LOG_MAX = 2000
+// How long the status notice stays at startup and after /auto.
+const NOTICE_MS = 4000
 
-type Karar = ReturnType<typeof secimYap>
+type Decision = ReturnType<typeof decide>
 
-async function kaydet($: EngineInterface, girdi: Record<string, unknown>) {
-  const eski = ((await $.store.get(LOG_ANAHTARI)) as unknown[] | undefined) ?? []
+async function record($: EngineInterface, entry: Record<string, unknown>) {
+  const old = ((await $.store.get(LOG_KEY)) as unknown[] | undefined) ?? []
   const t = new Date(await $.clock.now()).toISOString()
-  await $.store.set(LOG_ANAHTARI, [...eski, { t, ...girdi }].slice(-LOG_AZAMI))
+  await $.store.set(LOG_KEY, [...old, { t, ...entry }].slice(-LOG_MAX))
 }
 
-// Prompt satırının sağındaki mod etiketi (SessionMode). $.ui.status kullanılmaz: Claude Code onun başına
-// "⚠<eklenti adı>:" ekler. İki katman: kalıcı etiket (son karar; kapalıyken yok) ve birkaç saniye
-// onun yerine görünen geçici bildirim. Değişince ui.render yeniden çalıştırılır.
-// $ yalnızca dosyanın üst düzeyindeki fonksiyonlara verilebildiği için (doğrulayıcı kuralı) bunlar burada.
-let kalici: string | undefined
-let gecici: string | undefined
-let geciciZamanlayici: Timer | undefined
+// The mode label right of the prompt (SessionMode). $.ui.status is not used: Claude Code prefixes it with
+// "⚠<plugin name>:". Two layers: a lasting label (the last decision; none while off) and a notice shown in
+// its place for a few seconds. When either changes, ui.render runs again.
+// $ may only be passed to functions declared at the top level of this file (validator rule), hence these here.
+let lasting: string | undefined
+let notice: string | undefined
+let noticeTimer: Timer | undefined
 
-function goster($: EngineInterface, d: Parameters<typeof etiket>[0]) {
-  kalici = etiket(d)
+function show($: EngineInterface, d: Parameters<typeof label>[0]) {
+  lasting = label(d)
   $.ui.invalidate('ui.render')
 }
 
-function bildir($: EngineInterface, metin: string) {
-  geciciZamanlayici?.cancel()
-  gecici = metin
-  geciciZamanlayici = $.clock.after(BILDIRIM_MS, () => {
-    gecici = undefined
+function notify($: EngineInterface, text: string) {
+  noticeTimer?.cancel()
+  notice = text
+  noticeTimer = $.clock.after(NOTICE_MS, () => {
+    notice = undefined
     $.ui.invalidate('ui.render')
   })
   $.ui.invalidate('ui.render')
 }
 
 export const register: Register = on => {
-  let karar: Karar | null = null
-  let istemciModeli: string = MODELLER.sonnet
-  // Oturum hangi modelde olursa olsun yönlendirilir; durdurmak için /auto kapat (yalnızca bu oturum).
-  let acik = true
+  let decision: Decision | null = null
+  let clientModel: string = MODELS.sonnet
+  // Routes whatever model the session is on; /auto off stops it (this session only).
+  let enabled = true
 
   on('ui.render', { component: 'SessionMode' }, ($, e, next) => {
-    const metin = gecici ?? kalici
-    return metin ? next({ ...e, props: { ...e.props, modes: [...e.props.modes, metin] } }) : next(e)
+    const text = notice ?? lasting
+    return text ? next({ ...e, props: { ...e.props, modes: [...e.props.modes, text] } }) : next(e)
   })
 
   on('session.start', async ($, e, next) => {
-    $.ui.status(undefined) // eski sürümün bıraktığı status satırını temizle
+    $.ui.status(undefined) // clear a status line an older version may have left
     await $.command.register({
       name: 'auto-log',
-      description: 'auto-model-effort: model/effort kararlarının ve cache kullanımının özeti',
+      description: 'auto-model-effort: summary of model/effort decisions and cache usage',
     })
     await $.command.register({
       name: 'auto',
-      description: 'auto-model-effort: bu oturumda otomatik model/effort seçimini aç ya da kapat',
-      argumentHint: '[ac|kapat]',
+      description: 'auto-model-effort: turn automatic model/effort selection on or off for this session',
+      argumentHint: '[on|off]',
     })
-    bildir($, durumBildirimi(acik))
+    notify($, statusNotice(enabled))
     return next(e)
   })
 
   on('command.run', { command: 'auto-log' }, async $ => ({
-    text: logOzeti((await $.store.get(LOG_ANAHTARI)) as Parameters<typeof logOzeti>[0]),
+    text: logSummary((await $.store.get(LOG_KEY)) as Parameters<typeof logSummary>[0]),
   }))
 
   on('command.run', { command: 'auto' }, async ($, e) => {
-    const sonuc = autoKomutu(e.args, acik)
-    acik = sonuc.acik
-    goster($, acik && karar ? { karar } : null)
-    bildir($, durumBildirimi(acik))
-    return { text: sonuc.mesaj }
+    const result = autoCommand(e.args, enabled)
+    enabled = result.enabled
+    show($, enabled && decision ? { decision } : null)
+    notify($, statusNotice(enabled))
+    return { text: result.message }
   })
 
   on('turn.start', async ($, e, next) => {
-    // Boş metin prompt'suz bir turdur (arka plan ajanı bildirimi, devam): önceki karar sürer.
-    if (acik && e.text.trim()) {
-      const mesajlar = await $.session.messages()
-      karar = secimYap(e.text, {
-        onceki: karar,
-        istemciModeli,
-        baglamTokeni: JSON.stringify(mesajlar).length / 4,
-        dusurmeSiniri: DUSURME_SINIRI,
+    // Empty text is a turn without a typed prompt (a background agent's notification, a continuation):
+    // the previous decision stands.
+    if (enabled && e.text.trim()) {
+      const messages = await $.session.messages()
+      decision = decide(e.text, {
+        previous: decision,
+        clientModel,
+        contextTokens: JSON.stringify(messages).length / 4,
+        downgradeLimit: DOWNGRADE_LIMIT,
       })
-      goster($, { karar })
+      show($, { decision })
     }
     return next(e)
   })
 
   on('turn.step', async function* ($, e, next) {
-    if (e.agentId !== undefined) return yield* next(e) // alt ajanlar kendi modelinde kalır
-    istemciModeli = e.model
-    if (!acik) {
-      if (e.index === 0) await kaydet($, { adim: e.index, atlandi: 'kapali' })
+    if (e.agentId !== undefined) return yield* next(e) // subagents keep their own model
+    clientModel = e.model
+    if (!enabled) {
+      if (e.index === 0) await record($, { step: e.index, skipped: 'off' })
       return yield* next(e)
     }
-    if (!karar || karar.pasif) return yield* next(e)
+    if (!decision || decision.passive) return yield* next(e)
 
-    const { model, effort, seviye, skor, sebep } = karar
-    const akis = next({ ...e, model, effort })
-    let parcaGeldi = false
-    for await (const parca of akis) {
-      parcaGeldi = true
-      yield parca
+    const { model, effort, level, score, reason } = decision
+    const stream = next({ ...e, model, effort })
+    let gotChunk = false
+    for await (const chunk of stream) {
+      gotChunk = true
+      yield chunk
     }
-    let sonuc = await akis.result
+    let result = await stream.result
 
-    // Hiç yanıt gelmedi (API yeniden yazılan isteği reddetti) ve kullanıcı durdurmadı:
-    // bu prompt'un geri kalanında dokunma ve isteği oturumun kendi modeliyle bir kez daha gönder.
-    const geriDonus = !parcaGeldi && sonuc.usage === null && sonuc.stopReason === null && !next.signal.aborted
-    if (geriDonus) {
-      karar = { ...karar, pasif: true, sebep: 'red' }
-      sonuc = yield* next(e)
+    // No response at all (the API rejected the rewritten request) and the user did not interrupt:
+    // leave the rest of this prompt alone and send the request once more on the session's own model.
+    const fallback = !gotChunk && result.usage === null && result.stopReason === null && !next.signal.aborted
+    if (fallback) {
+      decision = { ...decision, passive: true, reason: 'rejected' }
+      result = yield* next(e)
     }
 
-    const u = sonuc.usage
-    goster($, { karar, yanit_modeli: u?.model })
-    await kaydet($, {
-      adim: e.index,
+    const u = result.usage
+    show($, { decision, responseModel: u?.model })
+    await record($, {
+      step: e.index,
       model,
       effort,
-      seviye,
-      skor,
-      sebep,
-      yanit_modeli: u?.model,
-      cache_yazma: u?.cache_creation_input_tokens,
-      cache_okuma: u?.cache_read_input_tokens,
-      ...(geriDonus ? { geri_donus: true } : {}),
+      level,
+      score,
+      reason,
+      responseModel: u?.model,
+      cacheWrite: u?.cache_creation_input_tokens,
+      cacheRead: u?.cache_read_input_tokens,
+      ...(fallback ? { fallback: true } : {}),
     })
-    return sonuc
+    return result
   })
 }

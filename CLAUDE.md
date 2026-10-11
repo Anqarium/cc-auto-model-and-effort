@@ -2,67 +2,71 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Amaç
+## Language
 
-Claude Code'un girilen prompt'a göre modeli ve effort seviyesini otomatik seçmesini sağlamak. Kullanıcı Claude aboneliği (OAuth) kullanıyor, API key değil.
+Everything in this repository is in English: code identifiers, comments, UI strings, tests, docs and commit messages (Conventional Commits). This overrides the user's global preference for Turkish docs and commit messages. The repo may be made public. Exceptions: the Turkish keyword lists in `lib/score.mjs` (the scorer must recognize Turkish prompts) and Turkish sample prompts in tests. Older commits are in Turkish; history is not rewritten. Replies to the user in chat stay in Turkish.
 
-Repo kökü bir Claude Code eklentisi (mod): `auto-model-effort`. `turn.step` kancasıyla ana konuşmanın her model isteğinin model/effort'unu Claude Code'un içinde değiştirir. Kullanıcı kapsamında kalıcı kurulu (2026-10-11): kökteki `.claude-plugin/marketplace.json` (`anqarium`) yerel marketplace olarak eklendi ve eklenti bu klasörden okunur; kod değişikliği açık oturumda `/reload-plugins` ile yansır. Düz `claude` yeterli; oturum hangi modelde açılırsa açılsın (`/model` dahil) yönlendirir. Durdurmak için `/auto kapat` (yalnızca o oturum; yeni oturum açık başlar).
+## Goal
 
-## Komutlar
+Make Claude Code pick the model and effort level automatically for each prompt. The user is on a Claude subscription (OAuth), not an API key.
 
-Bağımlılık yok (yalnızca Node ≥ 22, yerleşik modüller). Windows/PowerShell birincil ortam.
+The repo root is a Claude Code plugin (mod): `auto-model-effort`. Through the `turn.step` hook it changes the model/effort of every main-conversation model request inside Claude Code. Installed permanently at user scope (2026-10-11): the root `.claude-plugin/marketplace.json` (`anqarium`) was added as a local marketplace and the plugin is read from this folder; code changes apply in an open session with `/reload-plugins`. Plain `claude` is enough; it routes whatever model the session is on (including after `/model`). `/auto off` stops it for that session only (a new session starts on).
+
+## Commands
+
+No dependencies (Node ≥ 22, built-in modules only). Windows/PowerShell is the main environment.
 
 ```
-node --test test/*.test.mjs                       # tüm testler
-node --test --test-name-pattern "effort" test/secim.test.mjs   # tek test
-claude plugin validate .                          # manifest, marketplace ve hooks modülünü doğrular
-claude plugin list                                # auto-model-effort@anqarium: "Read from: <bu klasör>"; token-weather@anqarium (GitHub'dan kopya)
-claude plugin marketplace update anqarium         # marketplace.json değişince
+node --test test/*.test.mjs                       # all tests
+node --test --test-name-pattern "effort" test/select.test.mjs   # one test
+claude plugin validate .                          # validates manifest, marketplace and hooks module
+claude plugin list                                # auto-model-effort@anqarium: "Read from: <this folder>"; token-weather@anqarium (copy from GitHub)
+claude plugin marketplace update anqarium         # after marketplace.json changes
 ```
 
-Gerçek API ile doğrulama: `claude -p "<prompt>" --output-format json` → `modelUsage` gerçek modeli gösterir (mod Claude Code'un içinde çalıştığı için istemci gerçek modeli bilir). Giden isteğin `output_config.effort`'unu görmek için gözlemci: `node tools/spike.mjs` arka planda, sonra `ANTHROPIC_BASE_URL=http://127.0.0.1:8787 claude -p ...`; `tools/spike.log`'da `govde.model` / `govde.output_config.effort` (gövdeye dokunmaz). Bu sırada tool search kapanır, bağlam büyür (aşağıda). `claude -p "/auto-log"` PowerShell'den çalıştırılmalı: Git Bash `/auto-log`'u bir Windows yoluna çevirir.
+Checking against the real API: `claude -p "<prompt>" --output-format json < /dev/null` → `modelUsage` shows the real model (the mod runs inside Claude Code, so the client knows the real model). To see the outgoing `output_config.effort`, use the observer: `node tools/spike.mjs` in the background, then `ANTHROPIC_BASE_URL=http://127.0.0.1:8787 claude -p ...`; `tools/spike.log` has `body.model` / `body.output_config.effort` (it does not touch the body). Meanwhile tool search is off and the context grows (see below). Run `claude -p "/auto-log"` from PowerShell: Git Bash turns `/auto-log` into a Windows path.
 
-`anqarium` marketplace'i (`.claude-plugin/marketplace.json`) iki eklenti listeler: `auto-model-effort` (`"./"`, yerel klasörden okunur) ve kullanıcının diğer mod'u `token-weather` (GitHub kaynağı `Anqarium/token-weather`, private; kurulum repodan kopya alır, kaynak klasörü `~/.claude/mods/token-weather`). İki marketplace aynı adı taşıyamaz; kullanıcı eklentilerinin hepsinin `anqarium` altında görünmesini istiyor. `claude-auto` sarmalayıcısı ve profil fonksiyonu 2026-10-11'de kaldırıldı (mod her modelde çalıştığı için gereksizdi); kullanıcının PowerShell profilindeki `omni` fonksiyonu kullanıcınındır, dokunma.
+The `anqarium` marketplace (`.claude-plugin/marketplace.json`) lists two plugins: `auto-model-effort` (`"./"`, read from the local folder) and the user's other mod `token-weather` (GitHub source `Anqarium/token-weather`, private; installing takes a copy from the repo, the source folder is `~/.claude/mods/token-weather`). Two marketplaces cannot share a name; the user wants all their plugins under `anqarium`. The `claude-auto` wrapper and its profile function were removed on 2026-10-11 (unneeded once the mod routed every model); the `omni` function in the user's PowerShell profile is theirs, do not touch it.
 
-## Mimari
+## Architecture
 
-Mod Node'suz bir ortamda çalışır (DOM ve `node:` modülleri yok), yalnızca eklenti klasöründeki dosyaları `import` ile alabilir. Bu yüzden mantık Node'da test edilebilen saf modüllerde, mod kodu ince:
+The mod runs in an environment without Node (no DOM, no `node:` modules) and can only `import` files inside the plugin folder. So the logic lives in pure modules tested with Node, and the mod code stays thin:
 
-- `lib/skor.mjs` — `skorla(prompt)`: 0–100 zorluk skoru. OmniRoute'un `specificityRules` fikrinden uyarlandı: kategori başına tavanlı kural puanları (kod, matematik, **agir** = mimari/tasarım/kök neden/güvenlik açığı gibi tek başına zor işaretleri, akıl yürütme, ayrıntı, alan) ve kolay-işaret cezası. Kalıplar Türkçe+İngilizce. `kok()` kelime başında Unicode sınır + sonda ek toleransı, `tam()` iki uçta sınır (kolay kelimeleri için: "bul" → "bulut" eşleşmesin). JS `\b` ASCII bilir, Türkçe harfle başlayan kelimeleri kaçırır. Kökler ünsüz yumuşamasından önce kesilir (açık/açığı → "açı"). Regex'ler yalnızca ilk 4000 karaktere uygulanır (dosya yolu regex'i uzun girdide karesel yavaşlar). Kolay cezası ağır/alan sinyali varsa uygulanmaz.
-- `lib/secim.mjs` — `secimYap(metin, {onceki, istemciModeli, baglamTokeni, dusurmeSiniri})`. Model seviyeye göre (`ESLEME`): trivial/simple/moderate → sonnet, complex/expert → opus; yalnızca açık kolay işaretli trivial → haiku (`KOLAY_ESLEME`); kanıtsız prompt ucuza inmez (yanlış ucuz model daha zararlı). Effort skora göre ve model başına (`effortBul`, `YUKSEK_EFFORT_ESIGI`): medium her modelin varsayılanı olduğu için geniş tutulur (kullanıcı tercihi): haiku hep medium, sonnet > 30 high, opus > 75 high, low yok. Sinyalsiz, 25 karakterden kısa prompt ("devam et") önceki kararı sürdürür. Histerezis: konuşma tahmini > sınır ise model düşürülmez; ilk kararda taban istemcinin modeli. Effort histerezisten sonra, çalışacak modelin eşiğine göre.
-- `lib/gorunum.mjs` — `etiket(d)`: prompt satırının sağındaki mod etiketi (`⚡ Opus 5.5 · medium · complex 49`); `logOzeti(kayitlar)`: `/auto-log` metni.
+- `lib/score.mjs` — `scorePrompt(prompt)`: 0–100 difficulty score, adapted from OmniRoute's `specificityRules` idea: capped rule points per category (code, math, **heavy** = signals that alone mean a hard task, such as architecture/design/root cause/security hole, reasoning, length, domain) minus an easy-marker penalty. Patterns are Turkish + English. `stem()` uses a Unicode boundary at the word start and tolerates suffixes; `word()` has boundaries on both ends (for easy words: "bul" must not match "bulut"). JS `\b` only knows ASCII and misses words starting with Turkish letters. Stems are cut before Turkish consonant softening (açık/açığı → "açı"). Regexes only scan the first 4000 characters (the file-path regex is quadratic on long input). The easy penalty is skipped when there is a heavy/domain signal.
+- `lib/select.mjs` — `decide(text, {previous, clientModel, contextTokens, downgradeLimit})`. Model by level (`LEVEL_MODEL`): trivial/simple/moderate → sonnet, complex/expert → opus; only an explicitly easy trivial prompt → haiku (`EASY_LEVEL_MODEL`); a prompt with no evidence does not go cheap (a wrongly cheap model hurts more). Effort by score, per model (`effortFor`, `HIGH_EFFORT_THRESHOLD`): medium is every model's default so its band is wide (user's choice): haiku always medium, sonnet > 30 high, opus > 75 high, no low. A short prompt (< 25 chars) with no signal ("go on") keeps the previous decision (`short-followup`). Hysteresis: above the limit of estimated conversation tokens the model is not downgraded (`cache-hysteresis`); on the first decision the baseline is the client's model. Effort is computed after hysteresis, for the model that will run.
+- `lib/display.mjs` — `label(d)`: the mode label right of the prompt (`⚡ Opus 5.5 · medium · complex 49`); `statusNotice(enabled)`; `autoCommand(args, enabled)`; `logSummary(records)`: the `/auto-log` text.
 - `hooks/register.ts` (+ `hooks/hooks.json`, `.claude-plugin/plugin.json`):
-  - `turn.start` kullanıcının prompt metnini verir; prompt'suz turda (arka plan ajanı bildirimi, devam) metin boştur ve önceki karar sürer. Karar `secimYap` ile, bağlam tahmini `$.session.messages()`'tan.
-  - `turn.step` her model isteğinde çalışır: `agentId` varsa (alt ajan) dokunmaz; `/auto kapat` ile kapatıldıysa dokunmaz (logda `atlandi: kapali`); aksi hâlde oturum modeli ne olursa olsun `next({ ...e, model, effort })`. Eskiden yalnızca sonnet oturumu yönlendiriliyordu ve `/model` kaçış yoluydu; kullanıcı her zaman çalışmasını istedi (2026-10-11), kaçış yolu `/auto` komutu oldu (`autoKomutu`: argümansız aç/kapat, `ac|aç|on`, `kapat|off`).
-  - Geri dönüş: yeniden yazılan istekte hiç parça gelmez, `usage` ve `stopReason` null ve `next.signal` iptal değilse (kullanıcı Esc'e basmadıysa) istek oturumun kendi modeliyle bir kez daha gönderilir ve o prompt pasifleşir (`next()` her çağrıda alttakini baştan çalıştırır).
-  - Gösterim: `ui.render` `SessionMode` kancası, prompt satırının sağındaki soluk mod etiketlerine (`modes`) metin ekler; değişince `$.ui.invalidate('ui.render')`. İki katman: kalıcı etiket (`etiket()`: son karar; kapalıyken ve ilk prompt'tan önce boş) ve onun yerine `BILDIRIM_MS` (4 sn) görünen geçici bildirim (`durumBildirimi()`: `⚡ auto açık · /auto ile kapat` / `auto kapalı · /auto ile aç`); bildirim session.start'ta (açılış ve `/reload-plugins`) ve `/auto` sonrası, `$.clock.after` ile kalkar (hook bittikten sonra çalışan zamanlayıcı; `$.clock.sleep` hook bütçesini yer, kullanılmaz). `$.ui.status` bilerek kullanılmaz: Claude Code onun başına `⚠<eklenti adı>:` ekler (session.start'ta eski sürümden kalanı temizlemek için yalnızca `$.ui.status(undefined)`). Gerçek model yanıtın `usage.model`'inden. Doğrulayıcı kuralı: `$` yalnızca dosyanın üst düzeyinde tanımlı fonksiyonlara verilebilir (`register` içindeki bir const fonksiyona değil); bu yüzden `goster`, `bildir` ve etiket durumu (`kalici`, `gecici`) modül düzeyinde. Komut çıktısının başına Claude Code eklenti adını ekler; `autoKomutu` mesajları adla başlamaz. Kullanıcı tercihi (2026-10-11): `auto kapalı` da diğer bildirimler gibi 4 sn sonra kaybolur, kalıcı etiket olarak durmaz.
-  - Log: her ana model isteği `$.store`'da `kararlar` anahtarına (son 2000; model, effort, seviye, skor, sebep, gerçek model, cache_yazma/okuma, geri_donus); `/auto-log` komutu özetler. `$.fs.write` dosyanın tamamını yazdığı için dosya logu yok.
-- Mod API'sinin tipleri: plugin-authoring skill'inin `types/claude-code.d.ts`'i (`'turn.step'`, `TurnStepInput`, `TurnStepResult`, `HookStream`). Engine mod yüklenince `.claude-plugin/types/` ve kökte `tsconfig.json` yazar (ikisi de gitignore'da). Test kiti (`claude plugin test`) `turn.step`'i tetikleyemez; bu yüzden mantık `test/*.test.mjs` ile Node'da test edilir. Eklenti adı `claude-` ile başlayamaz (Anthropic'e ayrılmış). Mod API'si "EARLY ACCESS": Claude Code sürümleriyle değişebilir.
+  - `turn.start` gives the user's prompt text; on a turn without a typed prompt (a background agent's notification, a continuation) the text is empty and the previous decision stands. The decision comes from `decide`, the context estimate from `$.session.messages()`.
+  - `turn.step` runs on every model request: with an `agentId` (subagent) it does nothing; when turned off with `/auto off` it does nothing (logged as `skipped: "off"`); otherwise, whatever the session model is, `next({ ...e, model, effort })`. It used to route only sonnet sessions with `/model` as the escape hatch; the user wanted it always on (2026-10-11), so the escape hatch became `/auto` (no argument toggles, `on`, `off`).
+  - Fallback: if the rewritten request yields no chunk, `usage` and `stopReason` are null and `next.signal` is not aborted (the user did not press Esc), the request is sent once more on the session's own model and that prompt goes passive (`reason: "rejected"`). `next()` re-runs what is beneath on every call.
+  - Display: a `ui.render` hook on `SessionMode` adds text to the dim mode labels right of the prompt (`modes`); on change, `$.ui.invalidate('ui.render')`. Two layers: a lasting label (`label()`: the last decision; empty while off and before the first prompt) and a notice shown in its place for `NOTICE_MS` (4 s) (`statusNotice()`); the notice appears at `session.start` (startup and `/reload-plugins`) and after `/auto`, and is removed with `$.clock.after` (a timer that outlives the hook; `$.clock.sleep` would eat the hook's budget). User's choice (2026-10-11): "auto off" also disappears after 4 s, it is not a lasting label. `$.ui.status` is deliberately not used: Claude Code prefixes it with `⚠<plugin name>:` (only `$.ui.status(undefined)` at `session.start`, to clear one an older version left). The real model comes from the response's `usage.model`. Claude Code also prefixes command output with the plugin name, so `autoCommand` messages do not start with it. Validator rule: `$` may only be passed to functions declared at the top level of the file (not to a const function inside `register`), hence `show`, `notify` and the label state (`lasting`, `notice`) at module level.
+  - Log: every main-conversation model request goes to `$.store` under the `decisions` key (last 2000; step, model, effort, level, score, reason, responseModel, cacheWrite/cacheRead, fallback, skipped); `/auto-log` summarizes it. No file log: `$.fs.write` writes whole files only. (The Turkish-era key `kararlar` is no longer read.)
+- Mod API types: the plugin-authoring skill's `types/claude-code.d.ts` (`'turn.step'`, `TurnStepInput`, `TurnStepResult`, `HookStream`, `RenderComponent`). The engine writes `.claude-plugin/types/` and a root `tsconfig.json` when it loads the mod (both gitignored). The test kit (`claude plugin test`) cannot raise `turn.step`, so the logic is tested with Node in `test/*.test.mjs`. A plugin name cannot start with `claude-` (reserved for Anthropic). The mod API is "EARLY ACCESS" and may change between Claude Code versions.
 
-## Doğrulananlar (2026-10-10/11, Claude Code v2.1.296, Claude Pro/OAuth)
+## Verified (2026-10-10/11, Claude Code v2.1.296, Claude Pro/OAuth)
 
-- Kurulu mod, düz `claude -p` ile: kolay prompt → giden istek `claude-haiku-5-5`/`medium`, yanıt Haiku, `modelUsage` `claude-haiku-5-5`; skor 37 → `claude-sonnet-5-5`/`high` (spike gözlemciyle). İnteraktif: haiku → sonnet geçişi görüldü; `/auto-log` gerçek kayıtları gösterdi; `SessionMode` etiketi `/reload-plugins` sonrası prompt satırının sağında öneksiz göründü (`⚡ Sonnet 5.5 · medium · trivial 0`).
-- **Tool search ve base URL:** Claude Code, `ANTHROPIC_BASE_URL` birinci taraf olmayan bir sunucuyu gösterince MCP tool search'ü kapatıp tüm MCP araçlarını baştan yükler ([mcp](https://code.claude.com/docs/en/mcp), "Configure tool search"). Eski proxy yolunda taban bağlam ~280k (189k MCP araçları) idi; mod ile ~68k.
-- Cache: aynı model içinde okuma oranı %82–92; effort değişimi cache'i bozmuyor. Her modele ilk geçişte bağlamın tamamı yeniden yazılır; cache yazma okumadan ~12,5 kat pahalı. Kullanıcı geçiş kurallarını böyle bırakmayı seçti (2026-10-11).
-- Çok turlu model geçişi (haiku → opus, thinking blokları dahil) API tarafından reddedilmedi (proxy döneminde, interaktif).
+- The installed mod with plain `claude -p`: an easy prompt → outgoing request `claude-haiku-5-5`/`medium`, answered by Haiku, `modelUsage` `claude-haiku-5-5`; score 37 → `claude-sonnet-5-5`/`high` (with the spike observer). A session started with `--model opus` also routes (easy prompt → Haiku). Interactive: haiku → sonnet switch seen; `/auto-log` showed real records; the `SessionMode` label shows right of the prompt with no prefix.
+- **Tool search and base URL:** when `ANTHROPIC_BASE_URL` points to a non-first-party host, Claude Code turns MCP tool search off and loads every MCP tool upfront ([mcp](https://code.claude.com/docs/en/mcp), "Configure tool search"). On the old proxy path the base context was ~280k (189k MCP tools); with the mod ~68k.
+- Cache: within one model the read ratio is 82–92%; changing effort does not break the cache. The first switch to each model rewrites the whole context; a cache write costs ~12.5× a read. The user chose to keep the switching rules as they are (2026-10-11).
+- Multi-turn model switches (haiku → opus, thinking blocks included) were not rejected by the API (interactive, during the proxy era).
 
-## Riskler ve doğrulanmayanlar
+## Risks and unverified
 
-- Geri dönüş yolu gerçek bir API reddiyle tetiklenip denenmedi. Mod'da opus'a geçiş ve `--resume` interaktifte henüz denenmedi.
-- Skorlayıcı kural tabanlı, gerçek kullanımla kalibre edilmedi. "tasarım" kelimesi UI işlerinde de ağır sayılır.
+- The fallback path has not been triggered by a real API rejection.
+- The scorer is rule-based and not yet calibrated on real use. "tasarım" (design) also counts as heavy for UI work.
 
-## Geçmiş ve elenen yaklaşımlar (kısa)
+## History and rejected approaches (short)
 
-- **Proxy (2026-10-11'de silindi):** `ANTHROPIC_BASE_URL` ile yerel router istek gövdesindeki `model` ve `output_config.effort`'u yeniden yazıyordu; abonelik OAuth başlıkları aynen iletilince çalışıyordu. Sorunları: tool search'ü kapatıp bağlamı 4 kat şişirmesi, Claude Code'un gerçek modeli bilmemesi, ToS gri alanı. Kod git geçmişinde (`5abccb7` ve öncesi). Proxy döneminin karar/cache logu `tools/router-proxy-donemi.log` (git dışı).
-- **Hook + skill:** `UserPromptSubmit` hook'u model/effort değiştiremez. Skill frontmatter `model` override'ı ana modeli değiştirmiyor ([model-config](https://code.claude.com/docs/en/model-config): "Claude Code ignores the override …"); arayüz yine de `claude-opus-5-5` etiketi gösteriyor (yanıltıcı). Prototip `9075d5e` commit'inde.
-- **MCP:** modele araç verir, isteğin modelini değiştiremez.
-- **Subagent devri** (`gorev-kolay/orta/zor` + global `CLAUDE.md` "Model Yönlendirmesi"): ana model değişmez, nadir kullanılıyordu; 2026-10-11'de kaldırıldı, ajan dosyaları `~/.claude/agents-yedek-20261011-132617/`.
-- **OmniRoute / CLIProxyAPI:** prompt zorluğuna göre değil maliyet/kota/sağlığa göre sağlayıcılar arası seçer; abonelik tokenını üçüncü tarafa verir. Yalnızca OmniRoute'un zorluk skoru fikri alındı. Kullanıcının `settings.json`'undaki eski CPA env kalıntıları 2026-10-11'de kaldırıldı (yedek `~/.claude/settings.json.yedek-20261011-171206`).
+- **Proxy (deleted 2026-10-11):** a local router behind `ANTHROPIC_BASE_URL` rewrote `model` and `output_config.effort` in the request body; it worked with the subscription OAuth headers forwarded as-is. Problems: it turned tool search off and blew up the context 4×, Claude Code did not know the real model, and it was a terms-of-service gray area. The code is in git history (`5abccb7` and earlier). The proxy-era decision/cache log is `tools/router-proxy-era.log` (not in git).
+- **Hook + skill:** a `UserPromptSubmit` hook cannot change model/effort. A skill's frontmatter `model` override does not change the main model ([model-config](https://code.claude.com/docs/en/model-config): "Claude Code ignores the override …"), though the UI still shows a `claude-opus-5-5` label (misleading). Prototype in commit `9075d5e`.
+- **MCP:** gives the model tools; it cannot change the request's model.
+- **Subagent delegation** (`gorev-kolay/orta/zor` + the global `CLAUDE.md` "Model Yönlendirmesi" rule): the main model does not change, and it was rarely used; removed 2026-10-11, agent files in `~/.claude/agents-yedek-20261011-132617/`.
+- **OmniRoute / CLIProxyAPI:** pick across providers by cost/quota/health, not prompt difficulty; they hand the subscription token to a third party. Only OmniRoute's difficulty-score idea was taken. Old CPA env leftovers in the user's `settings.json` were removed on 2026-10-11 (backup `~/.claude/settings.json.yedek-20261011-171206`).
 
-## İşler bitince değinilecek (bu projenin konusu değil)
+## To revisit later (not this project's topic)
 
-- **Kapanış hook'u (`SessionEnd`/`Stop`):** Kullanıcı daha önce bir tane yaptığını söylüyor, ama 2026-10-10'da `~/.claude/settings.json` içinde yoktu; eklentilerde veya başka bir katmanda olabilir, kontrol edilmedi.
+- **Session-end hook (`SessionEnd`/`Stop`):** the user says they made one, but on 2026-10-10 it was not in `~/.claude/settings.json`; it may live in a plugin or another layer, not checked.
 
-## Sıradaki işler
+## Next
 
-1. Gerçek kullanımla skor ağırlıklarını ve `ESLEME`/effort eşiklerini kalibre et (`/auto-log`).
+1. Calibrate the score weights and the `LEVEL_MODEL`/effort thresholds on real use (`/auto-log`).

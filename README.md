@@ -1,38 +1,45 @@
 # cc-auto-model-and-effort
 
-Claude Code'un modelini ve effort seviyesini, girilen prompt'un zorluğuna göre otomatik seçen bir Claude Code eklentisi (mod: `auto-model-effort`). Claude aboneliği (OAuth) ile çalışır; proxy veya arka plan süreci gerekmez.
+A Claude Code plugin (mod: `auto-model-effort`) that automatically picks the model and effort level for each prompt based on how hard it looks. Works with a Claude subscription (OAuth); no proxy or background process needed.
 
-## Kurulum
+## Install
 
-Gereksinim: Claude Code 2.1.296+ (mod API'si erken erişimde).
+Requires Claude Code 2.1.296+ (the mod API is in early access).
 
 ```
 /plugin install auto-model-effort --marketplace Anqarium/cc-auto-model-and-effort
 ```
 
-Yerel bir kopyadan kurmak için (kod değişiklikleri `/reload-plugins` ile yansır):
+From a local clone (code changes apply with `/reload-plugins`):
 
 ```
-claude plugin marketplace add <bu repo klasörü>
+claude plugin marketplace add <path to this repo>
 claude plugin install auto-model-effort@anqarium
 ```
 
-## Kullanım
+## Usage
 
-Kurulduktan sonra düz `claude` yeterli. Oturum hangi modelde açılırsa açılsın (sonradan `/model` ile değiştirsen de) her prompt 0–100 arası skorlanır:
+Once installed, plain `claude` is enough. Whatever model the session starts on (or you switch to with `/model`), every prompt gets a 0–100 score:
 
-| Prompt | Skor | Model / effort |
+| Prompt | Score | Model / effort |
 |---|---|---|
-| Açıkça mekanik (yeniden adlandır, typo, listele…) | 0–5 | Haiku / medium |
-| Belirgin zorluk sinyali yok ya da orta | 0–30 | Sonnet / medium |
-| Orta-zor (ağır işaret + analiz: race condition'ı incele ve karşılaştır…) | 31–40 | Sonnet / high |
-| Zor (mimari + tasarım, kök neden + güvenlik…) | 41–75 | Opus / medium |
-| Çok zor ve çok yönlü | 76+ | Opus / high |
+| Clearly mechanical (rename, typo, list…) | 0–5 | Haiku / medium |
+| No clear difficulty signal, or moderate | 0–30 | Sonnet / medium |
+| Moderately hard (a heavy signal plus analysis: investigate and compare a race condition…) | 31–40 | Sonnet / high |
+| Hard (architecture + design, root cause + security…) | 41–75 | Opus / medium |
+| Very hard and many-sided | 76+ | Opus / high |
 
-Medium her modelin varsayılan effort'u olduğu için en geniş aralığı kaplar; low kullanılmaz. Alt ajanların modeline dokunulmaz. Seçilen model ve effort prompt satırının sağında soluk bir etiket olarak görünür: `⚡ Opus 5.5 · medium · complex 49`.
+Medium is every model's default effort, so it covers the widest range; low is never used. Prompts are scored in English and Turkish. Subagents keep their own model. The chosen model and effort show as a dim label right of the prompt: `⚡ Opus 5.5 · medium · complex 49`.
 
-Belirli bir modeli zorlamak istediğinde `/auto kapat` yaz: o oturumda yönlendirme durur ve seçtiğin model kullanılır; `/auto ac` geri açar, argümansız `/auto` aç/kapat yapar. Yeni oturum her zaman açık başlar; açılışta ve `/auto` sonrası birkaç saniye `⚡ auto açık · /auto ile kapat` (ya da `auto kapalı · /auto ile aç`) bildirimi görünür. Bir model isteği reddedilirse aynı istek oturumun kendi modeliyle tekrar gönderilir.
+To force a specific model, type `/auto off`: routing stops for that session and your chosen model is used; `/auto on` turns it back on, `/auto` alone toggles. Every new session starts on. At startup and after `/auto`, a notice (`⚡ auto on · /auto to turn off` or `auto off · /auto to turn on`) shows for a few seconds. If a rewritten request is rejected, the same request is sent again on the session's own model.
 
-`/auto-log` komutu kararların dağılımını, gerçekte çalışan modeli ve cache kullanımını özetler.
+`/auto-log` summarizes the decisions, the model that actually answered, and cache usage.
 
-Ayrıntılar (mimari, riskler, denenen yollar) için `CLAUDE.md`. Testler: `node --test test/*.test.mjs`, mod doğrulama: `claude plugin validate .`.
+## Development
+
+```
+node --test test/*.test.mjs
+claude plugin validate .
+```
+
+See `CLAUDE.md` for the architecture, risks, and the approaches that were tried.
