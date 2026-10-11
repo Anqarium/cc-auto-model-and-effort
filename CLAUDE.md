@@ -41,7 +41,7 @@ Mod Node'suz bir ortamda çalışır (DOM ve `node:` modülleri yok), yalnızca 
 
 ## Doğrulananlar (2026-10-10/11, Claude Code v2.1.296, Claude Pro/OAuth)
 
-- Kurulu mod, düz `claude -p` ile: kolay prompt → giden istek `claude-haiku-5-5`/`medium`, yanıt Haiku, `modelUsage` `claude-haiku-5-5`; skor 37 → `claude-sonnet-5-5`/`high` (spike gözlemciyle). İnteraktif: status satırında haiku → sonnet geçişi; `/auto-log` gerçek kayıtları gösterdi.
+- Kurulu mod, düz `claude -p` ile: kolay prompt → giden istek `claude-haiku-5-5`/`medium`, yanıt Haiku, `modelUsage` `claude-haiku-5-5`; skor 37 → `claude-sonnet-5-5`/`high` (spike gözlemciyle). İnteraktif: haiku → sonnet geçişi görüldü; `/auto-log` gerçek kayıtları gösterdi; `SessionMode` etiketi `/reload-plugins` sonrası prompt satırının sağında öneksiz göründü (`⚡ Sonnet 5.5 · medium · trivial 0`).
 - **Tool search ve base URL:** Claude Code, `ANTHROPIC_BASE_URL` birinci taraf olmayan bir sunucuyu gösterince MCP tool search'ü kapatıp tüm MCP araçlarını baştan yükler ([mcp](https://code.claude.com/docs/en/mcp), "Configure tool search"). Eski proxy yolunda taban bağlam ~280k (189k MCP araçları) idi; mod ile ~68k.
 - Cache: aynı model içinde okuma oranı %82–92; effort değişimi cache'i bozmuyor. Her modele ilk geçişte bağlamın tamamı yeniden yazılır; cache yazma okumadan ~12,5 kat pahalı. Kullanıcı geçiş kurallarını böyle bırakmayı seçti (2026-10-11).
 - Çok turlu model geçişi (haiku → opus, thinking blokları dahil) API tarafından reddedilmedi (proxy döneminde, interaktif).
