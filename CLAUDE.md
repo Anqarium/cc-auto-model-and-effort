@@ -64,10 +64,6 @@ The mod runs in an environment without Node (no DOM, no `node:` modules) and can
 - **Subagent delegation** (`gorev-kolay/orta/zor` + the global `CLAUDE.md` "Model Yönlendirmesi" rule): the main model does not change, and it was rarely used; removed 2026-10-11, agent files in `~/.claude/agents-yedek-20261011-132617/`.
 - **OmniRoute / CLIProxyAPI:** pick across providers by cost/quota/health, not prompt difficulty; they hand the subscription token to a third party. Only OmniRoute's difficulty-score idea was taken. Old CPA env leftovers in the user's `settings.json` were removed on 2026-10-11 (backup `~/.claude/settings.json.yedek-20261011-171206`).
 
-## To revisit later (not this project's topic)
-
-- **Session-end hook (`SessionEnd`/`Stop`):** the user says they made one, but on 2026-10-10 it was not in `~/.claude/settings.json`; it may live in a plugin or another layer, not checked.
-
 ## Next
 
 1. Calibrate the score weights and the `LEVEL_MODEL`/effort thresholds on real use (`/auto-log`).
