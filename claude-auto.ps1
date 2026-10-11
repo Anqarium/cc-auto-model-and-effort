@@ -1,6 +1,6 @@
-# auto-model-effort mod'u kalıcı kurulu olduğu için (claude plugin install auto-model-effort@anqarium)
-# düz `claude` zaten otomatik model/effort seçer. Bu betik yalnızca oturumu mod'un yönlendirdiği
-# sonnet ile başlatır (kullanıcı --model vermediyse). --plugin-dir verilmez: mod iki kez yüklenirdi.
+# Artık gerekli değil: auto-model-effort mod'u kalıcı kurulu (claude plugin install auto-model-effort@anqarium)
+# ve her modelde yönlendirdiği için düz `claude` yeterli. Bu betik yalnızca başlangıç modelini sonnet yapar
+# (kullanıcı --model vermediyse). --plugin-dir verilmez: mod iki kez yüklenirdi.
 
 # Bilerek param() bloğu yok: [Parameter] betiği "gelişmiş" yapar ve PowerShell `-p` gibi claude
 # bayraklarını ortak parametre öneki (-ProgressAction) sanıp reddeder. $args hepsini olduğu gibi alır.

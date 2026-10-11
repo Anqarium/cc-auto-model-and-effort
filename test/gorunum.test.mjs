@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { etiket, logOzeti } from "../lib/gorunum.mjs";
+import { autoKomutu, etiket, logOzeti } from "../lib/gorunum.mjs";
 
 test("'ayni-prompt' sebebi gürültü olduğu için etikete eklenmez", () => {
   const karar = { model: "claude-sonnet-5-5", effort: "medium", seviye: "simple", skor: 10, sebep: "ayni-prompt" };
@@ -29,4 +29,14 @@ test("etiket: önek yok, kısa; karar yokken gösterilmez", () => {
   assert.equal(etiket({ karar: { ...karar, sebep: "kisa-devam" } }), "⚡ Opus 5.5 · medium · complex 49 · kisa-devam");
   assert.equal(etiket({ atlandi: "model:claude-opus-5-5" }), "auto kapalı");
   assert.equal(etiket({ karar: { pasif: true, sebep: "red" }, yanit_modeli: "claude-sonnet-5-5" }), "auto ↩ Sonnet 5.5");
+});
+
+test("autoKomutu: argümansız aç/kapat, ac/aç/on açar, kapat/off kapatır, bilinmeyen durumu korur", () => {
+  assert.equal(autoKomutu("", true).acik, false);
+  assert.equal(autoKomutu("  ", false).acik, true);
+  for (const a of ["ac", "aç", "AÇ", "on"]) assert.equal(autoKomutu(a, false).acik, true, a);
+  for (const a of ["kapat", "KAPAT", "off"]) assert.equal(autoKomutu(a, true).acik, false, a);
+  const bilinmeyen = autoKomutu("belki", true);
+  assert.equal(bilinmeyen.acik, true);
+  assert.match(bilinmeyen.mesaj, /Kullanım: \/auto \[ac\|kapat\]/);
 });

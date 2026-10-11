@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Claude Code'un girilen prompt'a göre modeli ve effort seviyesini otomatik seçmesini sağlamak. Kullanıcı Claude aboneliği (OAuth) kullanıyor, API key değil.
 
-Repo kökü bir Claude Code eklentisi (mod): `auto-model-effort`. `turn.step` kancasıyla ana konuşmanın her model isteğinin model/effort'unu Claude Code'un içinde değiştirir. Kullanıcı kapsamında kalıcı kurulu (2026-10-11): kökteki `.claude-plugin/marketplace.json` (`anqarium`) yerel marketplace olarak eklendi ve eklenti bu klasörden okunur; kod değişikliği açık oturumda `/reload-plugins` ile yansır. Düz `claude` yeterli (kullanıcının varsayılan modeli sonnet).
+Repo kökü bir Claude Code eklentisi (mod): `auto-model-effort`. `turn.step` kancasıyla ana konuşmanın her model isteğinin model/effort'unu Claude Code'un içinde değiştirir. Kullanıcı kapsamında kalıcı kurulu (2026-10-11): kökteki `.claude-plugin/marketplace.json` (`anqarium`) yerel marketplace olarak eklendi ve eklenti bu klasörden okunur; kod değişikliği açık oturumda `/reload-plugins` ile yansır. Düz `claude` yeterli; oturum hangi modelde açılırsa açılsın (`/model` dahil) yönlendirir. Durdurmak için `/auto kapat` (yalnızca o oturum; yeni oturum açık başlar).
 
 ## Komutlar
 
@@ -17,7 +17,7 @@ node --test test/*.test.mjs                       # tüm testler
 node --test --test-name-pattern "effort" test/secim.test.mjs   # tek test
 claude plugin validate .                          # manifest, marketplace ve hooks modülünü doğrular
 claude plugin list                                # auto-model-effort@anqarium: "Read from: <bu klasör>"
-.\claude-auto.ps1 [claude argümanları]            # = claude --model sonnet ... (--plugin-dir YOK: kurulu mod iki kez yüklenirdi)
+.\claude-auto.ps1 [claude argümanları]            # = claude --model sonnet ...; artık gerekli değil, yalnızca başlangıç modelini sonnet yapar (--plugin-dir YOK: kurulu mod iki kez yüklenirdi)
 ```
 
 Gerçek API ile doğrulama: `claude -p "<prompt>" --output-format json` → `modelUsage` gerçek modeli gösterir (mod Claude Code'un içinde çalıştığı için istemci gerçek modeli bilir). Giden isteğin `output_config.effort`'unu görmek için gözlemci: `node tools/spike.mjs` arka planda, sonra `ANTHROPIC_BASE_URL=http://127.0.0.1:8787 claude -p ...`; `tools/spike.log`'da `govde.model` / `govde.output_config.effort` (gövdeye dokunmaz). Bu sırada tool search kapanır, bağlam büyür (aşağıda). `claude -p "/auto-log"` PowerShell'den çalıştırılmalı: Git Bash `/auto-log`'u bir Windows yoluna çevirir.
@@ -33,7 +33,7 @@ Mod Node'suz bir ortamda çalışır (DOM ve `node:` modülleri yok), yalnızca 
 - `lib/gorunum.mjs` — `etiket(d)`: prompt satırının sağındaki mod etiketi (`⚡ Opus 5.5 · medium · complex 49`); `logOzeti(kayitlar)`: `/auto-log` metni.
 - `hooks/register.ts` (+ `hooks/hooks.json`, `.claude-plugin/plugin.json`):
   - `turn.start` kullanıcının prompt metnini verir; prompt'suz turda (arka plan ajanı bildirimi, devam) metin boştur ve önceki karar sürer. Karar `secimYap` ile, bağlam tahmini `$.session.messages()`'tan.
-  - `turn.step` her model isteğinde çalışır: `agentId` varsa (alt ajan) dokunmaz; oturum modeli `claude-sonnet-5-5` değilse (`/model` ile değiştirildiyse) yönlendirmez ve status satırında söyler; aksi hâlde `next({ ...e, model, effort })`.
+  - `turn.step` her model isteğinde çalışır: `agentId` varsa (alt ajan) dokunmaz; `/auto kapat` ile kapatıldıysa dokunmaz (etiket `auto kapalı`, logda `atlandi: kapali`); aksi hâlde oturum modeli ne olursa olsun `next({ ...e, model, effort })`. Eskiden yalnızca sonnet oturumu yönlendiriliyordu ve `/model` kaçış yoluydu; kullanıcı her zaman çalışmasını istedi (2026-10-11), kaçış yolu `/auto` komutu oldu (`autoKomutu`: argümansız aç/kapat, `ac|aç|on`, `kapat|off`).
   - Geri dönüş: yeniden yazılan istekte hiç parça gelmez, `usage` ve `stopReason` null ve `next.signal` iptal değilse (kullanıcı Esc'e basmadıysa) istek oturumun kendi modeliyle bir kez daha gönderilir ve o prompt pasifleşir (`next()` her çağrıda alttakini baştan çalıştırır).
   - Gösterim: `ui.render` `SessionMode` kancası, prompt satırının sağındaki soluk mod etiketlerine (`modes`) `etiket()` metnini ekler; etiket değişince `$.ui.invalidate('ui.render')`. `$.ui.status` bilerek kullanılmaz: Claude Code onun başına `⚠<eklenti adı>:` ekler (session.start'ta eski sürümden kalanı temizlemek için yalnızca `$.ui.status(undefined)`). Gerçek model yanıtın `usage.model`'inden. Doğrulayıcı kuralı: `$` yalnızca dosyanın üst düzeyinde tanımlı fonksiyonlara verilebilir (`register` içindeki bir const fonksiyona değil); bu yüzden `goster` ve `etiketMetni` modül düzeyinde.
   - Log: her ana model isteği `$.store`'da `kararlar` anahtarına (son 2000; model, effort, seviye, skor, sebep, gerçek model, cache_yazma/okuma, geri_donus); `/auto-log` komutu özetler. `$.fs.write` dosyanın tamamını yazdığı için dosya logu yok.

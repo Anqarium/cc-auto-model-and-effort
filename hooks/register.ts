@@ -3,10 +3,8 @@
 // (lib/secim.mjs, lib/gorunum.mjs); Node ile test edilebilsinler diye mod kodundan ayrı tutulur.
 import type { EngineInterface, Register } from 'claude-code'
 import { MODELLER, secimYap } from '../lib/secim.mjs'
-import { etiket, logOzeti } from '../lib/gorunum.mjs'
+import { autoKomutu, etiket, logOzeti } from '../lib/gorunum.mjs'
 
-// Yalnızca oturum bu modeldeyken yönlendirilir; /model ile başka modele geçmek yönlendirmeyi kapatır.
-const YONLENDIRILECEK = new Set<string>([MODELLER.sonnet])
 // Konuşma bu kadar token'ı aşınca model düşürülmez (yeni model için cache baştan yazılır).
 const DUSURME_SINIRI = 30000
 // Kalibrasyon logu: $.store'da (oturumlar arası), son bu kadar ana model isteği.
@@ -33,6 +31,8 @@ function goster($: EngineInterface, d: Parameters<typeof etiket>[0]) {
 export const register: Register = on => {
   let karar: Karar | null = null
   let istemciModeli: string = MODELLER.sonnet
+  // Oturum hangi modelde olursa olsun yönlendirilir; durdurmak için /auto kapat (yalnızca bu oturum).
+  let acik = true
 
   on('ui.render', { component: 'SessionMode' }, ($, e, next) =>
     etiketMetni ? next({ ...e, props: { ...e.props, modes: [...e.props.modes, etiketMetni] } }) : next(e),
@@ -44,6 +44,11 @@ export const register: Register = on => {
       name: 'auto-log',
       description: 'auto-model-effort: model/effort kararlarının ve cache kullanımının özeti',
     })
+    await $.command.register({
+      name: 'auto',
+      description: 'auto-model-effort: bu oturumda otomatik model/effort seçimini aç ya da kapat',
+      argumentHint: '[ac|kapat]',
+    })
     return next(e)
   })
 
@@ -51,9 +56,16 @@ export const register: Register = on => {
     text: logOzeti((await $.store.get(LOG_ANAHTARI)) as Parameters<typeof logOzeti>[0]),
   }))
 
+  on('command.run', { command: 'auto' }, async ($, e) => {
+    const sonuc = autoKomutu(e.args, acik)
+    acik = sonuc.acik
+    goster($, acik ? (karar ? { karar } : null) : { atlandi: 'kapali' })
+    return { text: sonuc.mesaj }
+  })
+
   on('turn.start', async ($, e, next) => {
     // Boş metin prompt'suz bir turdur (arka plan ajanı bildirimi, devam): önceki karar sürer.
-    if (e.text.trim()) {
+    if (acik && e.text.trim()) {
       const mesajlar = await $.session.messages()
       karar = secimYap(e.text, {
         onceki: karar,
@@ -69,12 +81,11 @@ export const register: Register = on => {
   on('turn.step', async function* ($, e, next) {
     if (e.agentId !== undefined) return yield* next(e) // alt ajanlar kendi modelinde kalır
     istemciModeli = e.model
-    if (!karar || karar.pasif) return yield* next(e)
-    if (!YONLENDIRILECEK.has(e.model)) {
-      goster($, { atlandi: `model:${e.model}` })
-      if (e.index === 0) await kaydet($, { adim: e.index, atlandi: `model:${e.model}` })
+    if (!acik) {
+      if (e.index === 0) await kaydet($, { adim: e.index, atlandi: 'kapali' })
       return yield* next(e)
     }
+    if (!karar || karar.pasif) return yield* next(e)
 
     const { model, effort, seviye, skor, sebep } = karar
     const akis = next({ ...e, model, effort })
