@@ -4,9 +4,13 @@
 import type { EngineInterface, Register, Timer } from 'claude-code'
 import { MODELS, decide } from '../lib/select.mjs'
 import { autoCommand, label, logSummary, statusNotice } from '../lib/display.mjs'
+import { parseTriage, triageRequest } from '../lib/triage.mjs'
 
 // Above this many conversation tokens the model is not downgraded (the new model would rewrite the cache).
 const DOWNGRADE_LIMIT = 30000
+// Haiku triage: a prompt shorter than this after a first decision is not sent to Haiku; the call is cut at the timeout.
+const SHORT_PROMPT = 25
+const TRIAGE_TIMEOUT_MS = 8000
 // Calibration log in $.store (kept across sessions): the last this-many main-conversation model requests.
 const LOG_KEY = 'decisions'
 const LOG_MAX = 2000
@@ -87,11 +91,28 @@ export const register: Register = on => {
     // the previous decision stands.
     if (enabled && e.text.trim()) {
       const messages = await $.session.messages()
+      // Haiku rates the prompt; a short follow-up after a decision skips the call (the rules handle it), and
+      // a failed or unparseable call leaves `triage` undefined, so the rule-based score stands in.
+      let triage: number | undefined
+      let triageFailed = false
+      if (!(decision && e.text.trim().length < SHORT_PROMPT)) {
+        const r = await $.model.complete({
+          model: 'haiku',
+          ...triageRequest(e.text),
+          maxTokens: 8,
+          effort: 'low',
+          timeoutMs: TRIAGE_TIMEOUT_MS,
+        })
+        triage = r.isAnswered ? parseTriage(r.text) : undefined
+        triageFailed = triage === undefined
+      }
       decision = decide(e.text, {
         previous: decision,
         clientModel,
         contextTokens: JSON.stringify(messages).length / 4,
         downgradeLimit: DOWNGRADE_LIMIT,
+        triage,
+        triageFailed,
       })
       show($, { decision })
     }
