@@ -1,0 +1,11 @@
+{
+  "name": "anqarium",
+  "owner": { "name": "Anqarium" },
+  "plugins": [
+    {
+      "name": "auto-model-effort",
+      "source": "./",
+      "description": "Prompt zorluğuna göre ana oturumun modelini ve effort seviyesini otomatik seçer."
+    }
+  ]
+}

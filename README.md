@@ -2,15 +2,24 @@
 
 Claude Code'un modelini ve effort seviyesini, girilen prompt'un zorluğuna göre otomatik seçen bir Claude Code eklentisi (mod: `auto-model-effort`). Claude aboneliği (OAuth) ile çalışır; proxy veya arka plan süreci gerekmez.
 
-## Kullanım
+## Kurulum
 
 Gereksinim: Claude Code 2.1.296+ (mod API'si erken erişimde).
 
 ```
-.\claude-auto.ps1
+/plugin install auto-model-effort --marketplace Anqarium/cc-auto-model-and-effort
 ```
 
-Bu, `claude --plugin-dir <bu repo> --model sonnet` ile aynıdır: mod yüklü bir oturum açar. Claude'a verdiğin argümanlar (`-c`, `--resume`, `-p` …) aynen geçer. Her prompt 0–100 arası skorlanır:
+Yerel bir kopyadan kurmak için (kod değişiklikleri `/reload-plugins` ile yansır):
+
+```
+claude plugin marketplace add <bu repo klasörü>
+claude plugin install auto-model-effort@anqarium
+```
+
+## Kullanım
+
+Kurulduktan sonra düz `claude` yeterli. Oturum Sonnet ile açıldığında her prompt 0–100 arası skorlanır:
 
 | Prompt | Skor | Model / effort |
 |---|---|---|
@@ -22,6 +31,8 @@ Bu, `claude --plugin-dir <bu repo> --model sonnet` ile aynıdır: mod yüklü bi
 
 Medium her modelin varsayılan effort'u olduğu için en geniş aralığı kaplar; low kullanılmaz. Alt ajanların modeline dokunulmaz. Seçilen model ve effort status line'da görünür: `⚡ auto → Opus 5.5 · high · expert (72)`.
 
-Mod yalnızca Sonnet oturumunu yönlendirir; oturumda `/model` ile başka modele geçersen yönlendirme durur (status line'da `auto kapalı` görünür).
+Mod yalnızca Sonnet oturumunu yönlendirir; oturumda `/model` ile başka modele geçersen yönlendirme durur (status line'da `auto kapalı` görünür). Bir model isteği reddedilirse aynı istek oturumun kendi modeliyle tekrar gönderilir.
+
+`/auto-log` komutu kararların dağılımını, gerçekte çalışan modeli ve cache kullanımını özetler.
 
 Ayrıntılar (mimari, proxy tabanlı eski yol, riskler) için `CLAUDE.md`. Testler: `node --test proxy/test/*.test.mjs`, mod doğrulama: `claude plugin validate .`.
