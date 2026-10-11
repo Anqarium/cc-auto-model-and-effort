@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { skorla, seviyeBul } from "../skor.mjs";
+import { skorla, seviyeBul } from "../lib/skor.mjs";
 
 test("mekanik istek: trivial + kolay işaret", () => {
   const s = skorla("bu fonksiyonu yeniden adlandır");

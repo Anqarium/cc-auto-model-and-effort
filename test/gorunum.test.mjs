@@ -1,9 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { satir, durumOku } from "../statusline.mjs";
+import { logOzeti, satir } from "../lib/gorunum.mjs";
 
 test("karar yokken bekleme mesajı", () => {
   assert.equal(satir(null), "⚡ auto · ilk prompt bekleniyor");
@@ -16,19 +13,10 @@ test("yanıt gelmişse gerçek model, gelmemişse karar gösterilir", () => {
 });
 
 test("skor dışı sebep, atlama ve geri dönüş görünür", () => {
-  const karar = { model: "claude-opus-5-5", effort: "low", seviye: "trivial", skor: 0, sebep: "cache-histerezisi" };
+  const karar = { model: "claude-opus-5-5", effort: "medium", seviye: "trivial", skor: 0, sebep: "cache-histerezisi" };
   assert.match(satir({ karar }), /cache-histerezisi$/);
   assert.equal(satir({ atlandi: "model:claude-opus-5-5" }), "⚡ auto kapalı (model:claude-opus-5-5)");
-  assert.equal(satir({ karar: { pasif: true, sebep: "red:400" }, yanit_modeli: "claude-sonnet-5-5" }), "⚡ auto geri döndü (red:400) → Sonnet 5.5");
-});
-
-test("durumOku: dosyayı okur, geçersiz ya da yol içeren kimliği reddeder", () => {
-  const dizin = mkdtempSync(join(tmpdir(), "durum-"));
-  writeFileSync(join(dizin, "abc-123.json"), JSON.stringify({ atlandi: "x" }));
-  assert.deepEqual(durumOku("abc-123", dizin), { atlandi: "x" });
-  assert.equal(durumOku("yok", dizin), null);
-  assert.equal(durumOku("../abc-123", dizin), null);
-  assert.equal(durumOku(undefined, dizin), null);
+  assert.equal(satir({ karar: { pasif: true, sebep: "red" }, yanit_modeli: "claude-sonnet-5-5" }), "⚡ auto geri döndü (red) → Sonnet 5.5");
 });
 
 test("'ayni-prompt' sebebi gürültü olduğu için gösterilmez", () => {
@@ -36,8 +24,7 @@ test("'ayni-prompt' sebebi gürültü olduğu için gösterilmez", () => {
   assert.equal(satir({ karar }), "⚡ auto → Sonnet 5.5 · medium · simple (10)");
 });
 
-test("logOzeti: dağılım, gerçek model/cache toplamları, geri dönüş ve atlananlar", async () => {
-  const { logOzeti } = await import("../gorunum.mjs");
+test("logOzeti: dağılım, gerçek model/cache toplamları, geri dönüş ve atlananlar", () => {
   assert.equal(logOzeti([]), "Henüz kayıt yok.");
   assert.equal(logOzeti(undefined), "Henüz kayıt yok.");
   const ozet = logOzeti([

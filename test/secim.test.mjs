@@ -1,8 +1,25 @@
-// secimYap: proxy (karar.mjs) ve mod (hooks/register.ts) ortak kullanır; mod tarafı Node'suz çalıştığı için
-// burada doğrudan, istek gövdesi olmadan test edilir.
+// secimYap: mod'un (hooks/register.ts) karar mantığı. Mod Node'suz çalıştığı ve test kiti turn.step'i
+// tetikleyemediği için mantık burada doğrudan test edilir.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MODELLER, secimYap } from "../secim.mjs";
+import { MODELLER, effortBul, secimYap } from "../lib/secim.mjs";
+
+test("effort bantları: medium geniş, high yalnızca model eşiğinin üstünde, low yok", () => {
+  assert.equal(effortBul(MODELLER.haiku, 100), "medium");
+  assert.deepEqual([30, 31].map((s) => effortBul(MODELLER.sonnet, s)), ["medium", "high"]);
+  assert.deepEqual([41, 75, 76].map((s) => effortBul(MODELLER.opus, s)), ["medium", "medium", "high"]);
+  const orta = secimYap("veri çekme kodunda race condition olabilir mi? incele"); // 27
+  assert.deepEqual([orta.model, orta.effort], [MODELLER.sonnet, "medium"]);
+  const ortaYuksek = secimYap("veri çekme kodunda race condition olabilir mi? neden olur, incele ve alternatifleri karşılaştır"); // 37
+  assert.deepEqual([ortaYuksek.model, ortaYuksek.effort], [MODELLER.sonnet, "high"]);
+  const mimari = secimYap("bu servisin mimari tasarımını yap"); // 44
+  assert.deepEqual([mimari.model, mimari.effort], [MODELLER.opus, "medium"]);
+});
+
+test("kısa ama sinyalli prompt önceki kararı devralmaz, skorlanır", () => {
+  const onceki = secimYap("bu servisin mimari tasarımını yap");
+  assert.equal(secimYap("neden çalışmıyor?", { onceki }).sebep, "skor");
+});
 
 test("varsayılanlarla: kolay → haiku/medium, sinyalsiz → sonnet/medium, zor → opus", () => {
   assert.deepEqual(

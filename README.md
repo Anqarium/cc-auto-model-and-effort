@@ -35,4 +35,4 @@ Mod yalnızca Sonnet oturumunu yönlendirir; oturumda `/model` ile başka modele
 
 `/auto-log` komutu kararların dağılımını, gerçekte çalışan modeli ve cache kullanımını özetler.
 
-Ayrıntılar (mimari, proxy tabanlı eski yol, riskler) için `CLAUDE.md`. Testler: `node --test proxy/test/*.test.mjs`, mod doğrulama: `claude plugin validate .`.
+Ayrıntılar (mimari, riskler, denenen yollar) için `CLAUDE.md`. Testler: `node --test test/*.test.mjs`, mod doğrulama: `claude plugin validate .`.

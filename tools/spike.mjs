@@ -1,4 +1,6 @@
-// Spike: Claude Code <-> api.anthropic.com arasına giren yerel proxy.
+// Gözlemci: Claude Code <-> api.anthropic.com arasına giren yerel proxy. Mod'un gerçekten giden isteği
+// (model, output_config.effort) değiştirdiğini doğrulamak için: ANTHROPIC_BASE_URL=http://127.0.0.1:8787 claude ...
+// Not: base URL birinci taraf olmadığında Claude Code MCP tool search'ü kapatır, ölçülen bağlam büyür.
 // Varsayılan olarak yalnızca iletir ve isteğin YAPISINI loglar (mesaj içeriği/token değeri yazılmaz).
 // Gövde yeniden yazımı için: REWRITE_FROM=<model> REWRITE_TO=<model> [REWRITE_EFFORT=<seviye>]
 import http from "node:http";

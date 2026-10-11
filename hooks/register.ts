@@ -1,9 +1,9 @@
 // Claude Code mod'u: her kullanıcı prompt'unu skorlar ve ana konuşmanın model isteklerini (turn.step)
-// seçilen model + effort ile gönderir. Proxy'ye (proxy/router.mjs) gerek bırakmaz; seçim mantığı ve
-// statusline metni proxy ile ortaktır (proxy/secim.mjs, proxy/gorunum.mjs).
+// seçilen model + effort ile gönderir. Seçim mantığı ve statusline metni lib/ altındaki saf modüllerde
+// (lib/secim.mjs, lib/gorunum.mjs); Node ile test edilebilsinler diye mod kodundan ayrı tutulur.
 import type { EngineInterface, Register } from 'claude-code'
-import { MODELLER, secimYap } from '../proxy/secim.mjs'
-import { logOzeti, satir } from '../proxy/gorunum.mjs'
+import { MODELLER, secimYap } from '../lib/secim.mjs'
+import { logOzeti, satir } from '../lib/gorunum.mjs'
 
 // Yalnızca oturum bu modeldeyken yönlendirilir; /model ile başka modele geçmek yönlendirmeyi kapatır.
 const YONLENDIRILECEK = new Set<string>([MODELLER.sonnet])
