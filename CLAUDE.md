@@ -42,6 +42,8 @@ Ortak, saf (Node'suz) modüller — mod Node'suz bir ortamda çalıştığı iç
 
 ## Doğrulananlar (2026-10-10/11, Claude Code v2.1.296, Claude Pro/OAuth)
 
+- **Mod, interaktif (stock-tracker-v2):** status line `⚠auto-model-effort: ⚡ auto → Haiku 5.5 · medium · trivial (0)` ve sonra `Sonnet 5.5 · medium · moderate (27)` gösterdi. Baştaki `⚠auto-model-effort:` Claude Code'un eklenti status satırlarına kendi eklediği önek; `$.ui.status` yalnızca metin alır.
+- **Proxy bağlamı şişiriyordu:** Claude Code, `ANTHROPIC_BASE_URL` birinci taraf olmayan bir sunucuyu gösterince MCP tool search'ü kapatıp tüm MCP araçlarını baştan yükler ([mcp](https://code.claude.com/docs/en/mcp), "Configure tool search"). Proxy ile taban bağlam ~280k (189k MCP araçları), mod ile ~68k. Proxy yolunda gerekirse `ENABLE_TOOL_SEARCH=true` denenebilir (proxy `tool_reference` bloklarını iletiyorsa; denenmedi).
 - **Mod:** `claude -p --plugin-dir <repo>` ile kolay prompt → giden istek `claude-haiku-5-5`/`medium`, yanıt Haiku, Claude Code'un `modelUsage`'ı da `claude-haiku-5-5`; skor 37 prompt → `claude-sonnet-5-5`/`high`. (Spike gözlemci olarak, gövdeye dokunmadan.) `claude plugin validate .` geçiyor.
 - Proxy: `Authorization: Bearer` + `anthropic-beta: ...oauth-2025-04-20...` aynen iletilince istek 200; gövde yeniden yazımı kabul edilir. `CLAUDE_CODE_GATEWAY_HINT_HEADERS=1` ile `x-claude-code-request-class: main` geliyor. Mutasyon kontrolü: iptal, akış kopması, ReDoS ve üst süreç izleme düzeltmeleri geri alınınca ilgili testler kırılıyor.
 - İnteraktif (proxy, stock-tracker-v2): aynı oturumda haiku → sonnet-medium → sonnet-high → opus-medium → opus-high geçişleri statusline'da göründü, hiç `geri_donus` yok (çok turlu thinking blokları sorun çıkarmadı).
@@ -49,7 +51,7 @@ Ortak, saf (Node'suz) modüller — mod Node'suz bir ortamda çalıştığı iç
 
 ## Riskler ve doğrulanmayanlar
 
-- Mod: yalnızca `claude -p` ile doğrulandı; interaktif oturumda `$.ui.status` görünümü, çok turlu geçiş ve `--resume` denenmedi. Yeniden yazılan istek reddedilirse (400) mod'da proxy'deki gibi geri dönüş yok. Mod API'si "EARLY ACCESS" (sürümler arasında değişebilir).
+- Mod: interaktifte haiku → sonnet geçişi görüldü; opus'a geçiş ve `--resume` interaktifte henüz denenmedi. Yeniden yazılan istek reddedilirse (400) mod'da proxy'deki gibi geri dönüş yok. Mod API'si "EARLY ACCESS" (sürümler arasında değişebilir).
 - Proxy: abonelik OAuth'u ile gövde yeniden yazmanın kullanım koşullarına uygunluğu belirsiz (protokol dokümanı gövdeyi değiştirmemeyi öneriyor). Mod belgelenmiş eklenti API'sini kullandığı için bu gri alan mod'da büyük ölçüde yok.
 - Skorlayıcı kural tabanlı, gerçek kullanımla kalibre edilmedi. "tasarım" kelimesi UI işlerinde de ağır sayılır.
 - Oturum başında Claude Code'un 79 token'lık `auxiliary` isteği ara sıra 429 alıyor (proxy ona dokunmuyor; proxy'siz karşılaştırılmadı).
@@ -64,7 +66,7 @@ Ortak, saf (Node'suz) modüller — mod Node'suz bir ortamda çalıştığı iç
 ## İşler bitince değinilecek (bu projenin konusu değil)
 
 - **Kapanış hook'u (`SessionEnd`/`Stop`):** Kullanıcı daha önce bir tane yaptığını söylüyor, ama 2026-10-10'da `~/.claude/settings.json` içinde yok; eklentilerde veya başka bir katmanda olabilir, kontrol edilmedi.
-- **Bağlam boyutu:** taban bağlam ≈ 280k token (~189k MCP araçları); kullanılmayan MCP sunucularını kapatmak her turu ve her model geçişini ucuzlatır.
+- **Bağlam boyutu:** proxy yolunda taban bağlam ≈ 280k (tool search kapandığı için ~189k MCP araçları baştan yükleniyor); mod yolunda ≈ 68k. Ayrıntı "Doğrulananlar"da.
 
 ## Sıradaki işler
 
