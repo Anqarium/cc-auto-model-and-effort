@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { MODELS, decide } from "../lib/select.mjs";
-import { TRIAGE_MAX_CHARS, parseTriage, triageRequest } from "../lib/triage.mjs";
+import { parseTriage, triageRequest } from "../lib/triage.mjs";
 
 test("parseTriage accepts only a bare integer 0-100", () => {
   assert.deepEqual(["42", " 7\n", "100", "0", "55."].map(parseTriage), [42, 7, 100, 0, 55]);
@@ -11,9 +11,9 @@ test("parseTriage accepts only a bare integer 0-100", () => {
   }
 });
 
-test("triageRequest passes the prompt as data and truncates a long one", () => {
-  const r = triageRequest("x".repeat(TRIAGE_MAX_CHARS + 500));
-  assert.equal(r.prompt.length, TRIAGE_MAX_CHARS);
+test("triageRequest passes the whole prompt as data, however long", () => {
+  const r = triageRequest("x".repeat(50000));
+  assert.equal(r.prompt.length, 50000);
   assert.match(r.system, /single integer/);
 });
 

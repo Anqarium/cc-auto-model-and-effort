@@ -2,7 +2,18 @@
 // raise turn.step, so the logic is tested here directly.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MODELS, decide, effortFor } from "../lib/select.mjs";
+import { MODELS, SEED_IDS, decide, effortFor, learnModel, versionOf } from "../lib/select.mjs";
+
+test("model ids: versions parse, only a newer plain id is learned", () => {
+  assert.deepEqual(["claude-opus-5-5", "claude-haiku-4-5-20251001", "claude-opus-4-20250514"].map(versionOf), [[5, 5], [4, 5], [4, 0]]);
+  assert.equal(versionOf("claude-opus-5-5[1m]"), undefined);
+  assert.equal(learnModel(SEED_IDS, "claude-opus-5-6").opus, "claude-opus-5-6");
+  assert.equal(learnModel(SEED_IDS, "claude-opus-6-0").opus, "claude-opus-6-0");
+  assert.equal(learnModel(SEED_IDS, "claude-opus-5-5"), SEED_IDS); // same version: unchanged
+  assert.equal(learnModel(SEED_IDS, "claude-opus-4-1"), SEED_IDS); // older: ignored
+  assert.equal(learnModel(SEED_IDS, "claude-opus-5-9[1m]"), SEED_IDS); // suffixed: ignored
+  assert.equal(learnModel(SEED_IDS, "us.anthropic.claude-opus-5-9"), SEED_IDS); // provider id: ignored
+});
 
 test("effort bands: medium is wide, high only above the model's threshold, no low", () => {
   assert.equal(effortFor(MODELS.haiku, 100), "medium");

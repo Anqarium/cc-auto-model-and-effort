@@ -9,6 +9,7 @@ describe('auto-model-effort', () => {
     // A $ call the plugin makes is answered with { value } (or { deny }).
     on('command.register', ($, e) => ({ value: { command: e.name } }))
     on('ui.status', () => ({ value: undefined }))
+    on('store.get', () => ({ value: undefined })) // the learned model ids are read at startup
     // The engine would draw the SessionMode labels; here they are drawn as one plain text.
     on('ui.render', { component: 'SessionMode' }, ($, e) => {
       const { Text } = $.ui.resolve(e)

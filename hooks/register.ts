@@ -2,7 +2,7 @@
 // with the chosen model + effort. The decision logic and the display text live in pure modules under lib/
 // (lib/select.mjs, lib/display.mjs), kept out of the mod code so they can be tested with Node.
 import type { EngineInterface, Register, Timer } from 'claude-code'
-import { MODELS, decide } from '../lib/select.mjs'
+import { MODELS, SEED_IDS, decide, learnModel } from '../lib/select.mjs'
 import { autoCommand, label, logSummary, statusNotice } from '../lib/display.mjs'
 import { parseTriage, triageRequest } from '../lib/triage.mjs'
 
@@ -18,6 +18,17 @@ const LOG_MAX = 2000
 const NOTICE_MS = 4000
 
 type Decision = ReturnType<typeof decide>
+type ModelIds = Record<string, string>
+
+// Newest full model id seen per family, kept across sessions: turn.step does not resolve aliases, so the routed
+// request needs a real id. Any id the mod sees (session model, subagents, responses) can raise an entry.
+const IDS_KEY = 'modelIds'
+
+async function remember($: EngineInterface, ids: ModelIds, seen: string | undefined): Promise<ModelIds> {
+  const next = learnModel(ids, seen)
+  if (next !== ids) await $.store.set(IDS_KEY, next)
+  return next
+}
 
 async function record($: EngineInterface, entry: Record<string, unknown>) {
   const old = ((await $.store.get(LOG_KEY)) as unknown[] | undefined) ?? []
@@ -51,6 +62,7 @@ function notify($: EngineInterface, text: string) {
 export const register: Register = on => {
   let decision: Decision | null = null
   let clientModel: string = MODELS.sonnet
+  let ids: ModelIds = SEED_IDS
   // Routes whatever model the session is on; /auto off stops it (this session only).
   let enabled = true
 
@@ -61,6 +73,8 @@ export const register: Register = on => {
 
   on('session.start', async ($, e, next) => {
     $.ui.status(undefined) // clear a status line an older version may have left
+    const stored = ((await $.store.get(IDS_KEY)) as ModelIds | undefined) ?? {}
+    for (const id of Object.values(stored)) ids = learnModel(ids, id)
     await $.command.register({
       name: 'auto-log',
       description: 'auto-model-effort: summary of model/effort decisions and cache usage',
@@ -120,6 +134,7 @@ export const register: Register = on => {
   })
 
   on('turn.step', async function* ($, e, next) {
+    ids = await remember($, ids, e.model) // subagent steps teach ids too
     if (e.agentId !== undefined) return yield* next(e) // subagents keep their own model
     clientModel = e.model
     if (!enabled) {
@@ -129,7 +144,7 @@ export const register: Register = on => {
     if (!decision || decision.passive) return yield* next(e)
 
     const { model, effort, level, score, reason } = decision
-    const stream = next({ ...e, model, effort })
+    const stream = next({ ...e, model: ids[model] ?? e.model, effort })
     let gotChunk = false
     for await (const chunk of stream) {
       gotChunk = true
@@ -146,6 +161,7 @@ export const register: Register = on => {
     }
 
     const u = result.usage
+    ids = await remember($, ids, u?.model)
     show($, { decision, responseModel: u?.model })
     await record($, {
       step: e.index,
