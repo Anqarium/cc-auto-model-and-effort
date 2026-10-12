@@ -5,7 +5,7 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 import { MODELS, SEED_IDS, decide, learnModel } from '../lib/select.mjs'
 import { effortsFromCatalog, idsFromCatalog } from '../lib/catalog.mjs'
 import { autoCommand, label, logSummary, statusNotice } from '../lib/display.mjs'
-import { parseTriage, triageRequest } from '../lib/triage.mjs'
+import { TRIAGE_HEADERS, TRIAGE_URL, parseTriageResponse, promptImages, triageBody } from '../lib/triage.mjs'
 
 // Above this many conversation tokens the model is not downgraded (the new model would rewrite the cache).
 const DOWNGRADE_LIMIT = 30000
@@ -57,6 +57,25 @@ async function remember($: EngineInterface, ids: ModelIds, seen: string | undefi
   return next
 }
 
+// Haiku triage over the Messages API with the session's own credential: $.model.complete takes text only, and
+// the prompt's screenshots must go along. Never throws: a missing credential or a failed call becomes a note.
+async function triageCall($: EngineInterface, text: string, images: unknown[], model: string): Promise<{ score?: number; note?: string }> {
+  try {
+    const auth = await $.session.authorize()
+    if (!auth) return { note: 'no-credential' }
+    return parseTriageResponse(
+      await $.http.fetch(TRIAGE_URL, {
+        method: 'POST',
+        auth: auth.handle,
+        headers: TRIAGE_HEADERS,
+        body: JSON.stringify(triageBody(text, images, model)),
+      }),
+    )
+  } catch (error) {
+    return { note: `fetch-error: ${String(error).slice(0, 60)}` }
+  }
+}
+
 async function record($: EngineInterface, entry: Record<string, unknown>) {
   const old = ((await $.store.get(LOG_KEY)) as unknown[] | undefined) ?? []
   const t = new Date(await $.clock.now()).toISOString()
@@ -96,6 +115,8 @@ export const register: Register = on => {
   let enabled = true
   // Why the last prompt's Haiku triage gave no rating (undefined when it did or was skipped); logged with its first step.
   let triageNote: string | undefined
+  // How many screenshots the last prompt carried; logged with its first step.
+  let imageCount = 0
 
   on('ui.render', { component: 'SessionMode' }, ($, e, next) => {
     const text = notice ?? lasting
@@ -139,21 +160,19 @@ export const register: Register = on => {
       ids = learned.ids
       efforts = Object.fromEntries(Object.entries(ids).flatMap(([family, id]) => (learned.efforts[id] ? [[family, learned.efforts[id]]] : [])))
       const messages = await $.session.messages()
-      // Haiku rates the prompt; a short follow-up after a decision skips the call (the rules handle it), and
-      // a failed or unparseable call leaves `triage` undefined, so the rule-based score stands in.
+      const images = promptImages(await $.session.messages({ as: 'api' }))
+      imageCount = images.length
+      // Haiku rates the prompt with its screenshots; a short follow-up with no screenshot after a decision skips
+      // the call (the rules handle it), and a failed or unparseable call leaves `triage` undefined, so the
+      // rule-based score stands in.
       let triage: number | undefined
       let triageFailed = false
       triageNote = undefined
-      if (!(decision && e.text.trim().length < SHORT_PROMPT)) {
-        const r = await $.model.complete({
-          model: 'haiku',
-          ...triageRequest(e.text),
-          maxTokens: 8,
-          effort: 'low',
-        })
-        triage = r.isAnswered ? parseTriage(r.text) : undefined
+      if (!(decision && e.text.trim().length < SHORT_PROMPT && !images.length)) {
+        const r = await triageCall($, e.text, images, ids.haiku ?? SEED_IDS.haiku)
+        triage = r.score
         triageFailed = triage === undefined
-        triageNote = !triageFailed ? undefined : !r.isAnswered ? (r.reason === 'api-error' ? `api-error ${r.status ?? 'no-response'}` : r.reason) : `unparseable: ${r.text.slice(0, 40)}`
+        triageNote = r.note
       }
       decision = decide(e.text, {
         previous: decision,
@@ -162,6 +181,7 @@ export const register: Register = on => {
         downgradeLimit: DOWNGRADE_LIMIT,
         triage,
         triageFailed,
+        images: images.length,
         efforts,
       })
       show($, { decision })
@@ -207,6 +227,7 @@ export const register: Register = on => {
       score,
       reason,
       ...(e.index === 0 && triageNote ? { triageNote } : {}),
+      ...(e.index === 0 && imageCount ? { images: imageCount } : {}),
       responseModel: u?.model,
       cacheWrite: u?.cache_creation_input_tokens,
       cacheRead: u?.cache_read_input_tokens,
