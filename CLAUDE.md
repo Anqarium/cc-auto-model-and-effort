@@ -53,6 +53,8 @@ The mod runs in an environment without Node (no DOM, no `node:` modules) and can
 - Cache: within one model the read ratio is 82–92%; changing effort does not break the cache. The first switch to each model rewrites the whole context; a cache write costs ~12.5× a read. The user chose to keep the switching rules as they are (2026-10-11).
 - Multi-turn model switches (haiku → opus, thinking blocks included) were not rejected by the API (interactive, during the proxy era).
 
+- Re-checked on Claude Code v2.1.302 (2026-10-17): `claude plugin validate .` passes (its only warning says a root `CLAUDE.md` is not loaded as plugin context, harmless), logic and kit tests pass, and a real `claude -p "mimari nedir?"` was triaged by Haiku (`trivial (3)`, no `rules-fallback`) and answered by `claude-haiku-5-5`. The 2.1.297–302 release notes have nothing that breaks the mod; no code change was needed.
+
 ## Risks and unverified
 
 - The fallback path has not been triggered by a real API rejection.
