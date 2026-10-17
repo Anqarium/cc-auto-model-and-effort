@@ -19,9 +19,10 @@ test("triageBody sends the whole prompt and its screenshots, behind Claude Code'
   assert.equal(b.system[0].text, IDENTITY);
   assert.match(b.system[1].text, /single integer/);
   assert.deepEqual(b.messages[0].content.map((c) => c.type), ["image", "text"]);
-  assert.equal(b.messages[0].content[1].text.length, 50000);
+  assert.ok(b.messages[0].content[1].text.includes("x".repeat(50000)));
+  assert.match(b.messages[0].content[1].text, /^<task>\n.*\n<\/task>\n\nRate the difficulty .*integer only\.$/s);
   assert.ok(b.max_tokens >= 512, "room for Haiku's thinking before the number");
-  assert.equal(triageBody("  ", [IMAGE], "m").messages[0].content[1].text, "(screenshot only)");
+  assert.match(triageBody("  ", [IMAGE], "m").messages[0].content[1].text, /^<task>\n\(screenshot only\)\n<\/task>/);
 });
 
 test("promptImages takes the image blocks of the latest user message only", () => {
