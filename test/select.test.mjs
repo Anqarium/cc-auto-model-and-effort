@@ -2,7 +2,14 @@
 // raise turn.step, so the logic is tested here directly.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MODELS, SEED_IDS, decide, effortFor, learnModel, versionOf } from "../lib/select.mjs";
+import { MODELS, SEED_IDS, decide, effortFor, effortToSend, learnModel, versionOf } from "../lib/select.mjs";
+
+test("ultrathink: an incoming xhigh/max effort is kept, anything else takes the mod's choice", () => {
+  assert.equal(effortToSend("xhigh", "medium"), "xhigh");
+  assert.equal(effortToSend("max", "high"), "max");
+  assert.equal(effortToSend("high", "medium"), "medium");
+  assert.equal(effortToSend(undefined, "high"), "high");
+});
 
 test("model ids: versions parse, only a newer plain id is learned", () => {
   assert.deepEqual(["claude-opus-5-5", "claude-haiku-4-5-20251001", "claude-opus-4-20250514"].map(versionOf), [[5, 5], [4, 5], [4, 0]]);

@@ -2,7 +2,7 @@
 // with the chosen model + effort. The decision logic and the display text live in pure modules under lib/
 // (lib/select.mjs, lib/display.mjs), kept out of the mod code so they can be tested with Node.
 import type { EngineInterface, Register, Timer } from 'claude-code'
-import { MODELS, SEED_IDS, decide, learnModel } from '../lib/select.mjs'
+import { MODELS, SEED_IDS, decide, effortToSend, learnModel } from '../lib/select.mjs'
 import { effortsFromCatalog, idsFromCatalog } from '../lib/catalog.mjs'
 import { autoCommand, label, logSummary, statusNotice } from '../lib/display.mjs'
 import { TRIAGE_HEADERS, TRIAGE_URL, parseTriageResponse, promptImages, triageBody } from '../lib/triage.mjs'
@@ -199,7 +199,8 @@ export const register: Register = on => {
     }
     if (!decision || decision.passive) return yield* next(e)
 
-    const { model, effort, level, score, reason } = decision
+    const { model, level, score, reason } = decision
+    const effort = effortToSend(e.effort, decision.effort) // keeps an ultrathink turn's xhigh
     const stream = next({ ...e, model: ids[model] ?? e.model, effort })
     let gotChunk = false
     for await (const chunk of stream) {
