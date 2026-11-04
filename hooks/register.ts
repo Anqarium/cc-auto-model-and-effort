@@ -229,6 +229,7 @@ export const register: Register = on => {
       reason,
       ...(e.index === 0 && triageNote ? { triageNote } : {}),
       ...(e.index === 0 && imageCount ? { images: imageCount } : {}),
+      ...(effort !== decision.effort ? { chosenEffort: decision.effort } : {}), // session's xhigh/max kept
       responseModel: u?.model,
       cacheWrite: u?.cache_creation_input_tokens,
       cacheRead: u?.cache_read_input_tokens,

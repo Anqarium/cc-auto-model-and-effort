@@ -35,8 +35,11 @@ test("logSummary: distribution, actual model/cache totals, fallbacks and skipped
     { t: "2026-10-11T14:00:05.000Z", step: 1, model: "claude-haiku-5-5", effort: "medium", level: "trivial", score: 0, reason: "score", responseModel: "claude-haiku-5-5", cacheWrite: 0, cacheRead: 300 },
     { t: "2026-10-11T14:02:00.000Z", step: 0, model: "claude-opus-5-5", effort: "high", level: "expert", score: 80, reason: "score", responseModel: "claude-sonnet-5-5", fallback: true },
     { t: "2026-10-11T14:03:00.000Z", step: 0, skipped: "off" },
+    { t: "2026-10-11T14:04:00.000Z", step: 0, model: "claude-sonnet-5-5", effort: "xhigh", chosenEffort: "medium", level: "simple", score: 12, reason: "score", responseModel: "claude-sonnet-5-5" },
   ]);
-  assert.match(summary, /4 model requests, 2 prompt decisions/);
+  assert.match(summary, /5 model requests, 3 prompt decisions/);
   assert.match(summary, /Haiku 5\.5: 2 requests, write 100, read 300 \(75% read\)/);
-  assert.match(summary, /Fallbacks: 1 · Skipped: 1/);
+  assert.match(summary, /Fallbacks: 1 · Skipped: 1 · Session effort kept: 1/);
+  assert.match(summary, /Sonnet 5\.5 xhigh  simple \(12\) · session effort \(mod: medium\)/);
+  assert.doesNotMatch(summary, /Opus 5\.5 high .*session effort/);
 });
