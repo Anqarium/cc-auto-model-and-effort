@@ -219,7 +219,7 @@ export const register: Register = on => {
 
     const u = result.usage
     ids = await remember($, ids, u?.model)
-    show($, { decision, responseModel: u?.model })
+    show($, { decision, responseModel: u?.model, sentEffort: fallback ? undefined : effort })
     await record($, {
       step: e.index,
       model,
