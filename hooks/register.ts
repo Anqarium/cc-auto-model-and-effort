@@ -122,6 +122,8 @@ export const register: Register = on => {
   let triageNote: string | undefined
   // How many screenshots the last prompt carried; logged with its first step.
   let imageCount = 0
+  // Last band width recorded by the temporary diagnostic in the AbovePrompt hook.
+  let lastCols = -1
 
   on('ui.render', { component: 'SessionMode' }, ($, e, next) => {
     const text = notice ?? lasting
@@ -133,6 +135,12 @@ export const register: Register = on => {
   // process). The terminal keeps the SessionMode label, so no duplicate there. Other bands (token-weather) are kept.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const inner = await next(e)
+    // TEMPORARY diagnostic (v0.1.15): record the band's width to calibrate SAME_ROW_COLUMNS; remove afterwards.
+    if (e.surface === 'desktop' && e.props.bodyColumns !== lastCols) {
+      lastCols = e.props.bodyColumns
+      const seen = ((await $.store.get('bodyColumnsSeen')) as number[] | undefined) ?? []
+      await $.store.set('bodyColumnsSeen', [...seen, lastCols].slice(-40))
+    }
     const text = notice ?? lasting
     if (e.surface !== 'desktop' || !text || e.props.hasSurvey) return inner
     const { Box, Text } = $.ui.resolve(e)
