@@ -131,7 +131,7 @@ export const register: Register = on => {
     const text = notice ?? lasting
     if (e.surface !== 'desktop' || !text || e.props.hasSurvey) return inner
     const { Box, Text } = $.ui.resolve(e)
-    const line = h(Box, { paddingX: 1 }, h(Text, { dimColor: true }, text))
+    const line = h(Box, { paddingX: 1 }, h(Text, { dimColor: true }, text.replace(/^⚡\s*/, '')))
     return inner ? h(Box, { flexDirection: 'column' }, line, inner) : line
   })
 
