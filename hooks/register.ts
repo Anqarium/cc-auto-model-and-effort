@@ -138,8 +138,12 @@ export const register: Register = on => {
     // TEMPORARY diagnostic (v0.1.15): record the band's width to calibrate SAME_ROW_COLUMNS; remove afterwards.
     if (e.surface === 'desktop' && e.props.bodyColumns !== lastCols) {
       lastCols = e.props.bodyColumns
-      const seen = ((await $.store.get('bodyColumnsSeen')) as number[] | undefined) ?? []
-      await $.store.set('bodyColumnsSeen', [...seen, lastCols].slice(-40))
+      try {
+        const seen = ((await $.store.get('bodyColumnsSeen')) as number[] | undefined) ?? []
+        await $.store.set('bodyColumnsSeen', [...seen, lastCols].slice(-40))
+      } catch {
+        // the diagnostic must never take the label down with it
+      }
     }
     const text = notice ?? lasting
     if (e.surface !== 'desktop' || !text || e.props.hasSurvey) return inner
