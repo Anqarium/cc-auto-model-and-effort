@@ -131,8 +131,9 @@ export const register: Register = on => {
     const text = notice ?? lasting
     if (e.surface !== 'desktop' || !text || e.props.hasSurvey) return inner
     const { Box, Text } = $.ui.resolve(e)
-    const line = h(Box, { paddingX: 1, justifyContent: 'flex-end' }, h(Text, { dimColor: true }, text))
-    return inner ? h(Box, { flexDirection: 'column' }, line, inner) : line
+    const line = h(Box, { paddingX: 1 }, h(Text, { dimColor: true }, text))
+    // Same row as the band beneath (token-weather's), ours at the far right; alone it is right-aligned.
+    return h(Box, { flexDirection: 'row', justifyContent: inner ? 'space-between' : 'flex-end' }, inner, line)
   })
 
   on('session.start', async ($, e, next) => {
