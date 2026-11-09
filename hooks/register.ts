@@ -117,8 +117,6 @@ export const register: Register = on => {
   let triageNote: string | undefined
   // How many screenshots the last prompt carried; logged with its first step.
   let imageCount = 0
-  // True when the session draws on the desktop app (set at session.start).
-  let onDesktop = false
 
   on('ui.render', { component: 'SessionMode' }, ($, e, next) => {
     const text = notice ?? lasting
@@ -126,18 +124,18 @@ export const register: Register = on => {
   })
 
   // The desktop does not draw SessionMode, so there the same text goes into the AbovePrompt band (raised on the terminal
-  // and desktop). The terminal keeps the SessionMode label, so no duplicate there. Other bands (token-weather) are kept.
+  // and desktop; the render event's own surface is used because session.start reports null for the desktop's SDK-style
+  // process). The terminal keeps the SessionMode label, so no duplicate there. Other bands (token-weather) are kept.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const inner = await next(e)
     const text = notice ?? lasting
-    if (!onDesktop || !text || e.props.hasSurvey) return inner
+    if (e.surface !== 'desktop' || !text || e.props.hasSurvey) return inner
     const { Box, Text } = $.ui.resolve(e)
     const line = h(Box, { paddingX: 1 }, h(Text, { dimColor: true }, text))
     return inner ? h(Box, { flexDirection: 'column' }, line, inner) : line
   })
 
   on('session.start', async ($, e, next) => {
-    onDesktop = e.surface === 'desktop'
     $.ui.status(undefined) // clear a status line an older version may have left
     const stored = ((await $.store.get(IDS_KEY)) as ModelIds | undefined) ?? {}
     for (const id of Object.values(stored)) ids = learnModel(ids, id)

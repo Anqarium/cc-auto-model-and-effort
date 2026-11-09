@@ -37,7 +37,7 @@ describe('auto-model-effort', () => {
     })
     const props = { hasSurvey: false, isWorking: false }
 
-    await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
+    await $.session.start({ surface: null, isInteractive: false, cwd: '/work' })
     const desktop = await $.ui.mount({ plugin: 'auto-model-effort', surface: 'desktop', component: 'AbovePrompt', props })
     expect(await desktop.find({ text: /auto on/ })).toBeDefined()
     expect(await desktop.find({ text: /other band/ })).toBeDefined()
