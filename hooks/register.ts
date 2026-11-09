@@ -16,6 +16,9 @@ const LOG_KEY = 'decisions'
 const LOG_MAX = 2000
 // How long the status notice stays at startup and after /auto.
 const NOTICE_MS = 4000
+// Band width (columns) from which the desktop label shares token-weather's row; below it it gets its own row.
+// Guessed from two screenshots (a wide window fit on one row, a ~575 px one wrapped); tune on real use.
+const SAME_ROW_COLUMNS = 100
 
 type Decision = ReturnType<typeof decide>
 type ModelIds = Record<string, string>
@@ -132,8 +135,13 @@ export const register: Register = on => {
     if (e.surface !== 'desktop' || !text || e.props.hasSurvey) return inner
     const { Box, Text } = $.ui.resolve(e)
     const line = h(Box, { paddingX: 1 }, h(Text, { dimColor: true }, text))
-    // Same row as the band beneath (token-weather's), ours at the far right; alone it is right-aligned.
-    return h(Box, { flexDirection: 'row', justifyContent: inner ? 'space-between' : 'flex-end' }, inner, line)
+    // Same row as the band beneath (token-weather's), ours at the far right; alone it is right-aligned. In a narrow
+    // window both would wrap into a mess, so the label goes on its own row, right-aligned, above the band.
+    if (inner && e.props.bodyColumns >= SAME_ROW_COLUMNS) {
+      return h(Box, { flexDirection: 'row', justifyContent: 'space-between' }, inner, line)
+    }
+    const own = h(Box, { paddingX: 1, justifyContent: 'flex-end' }, h(Text, { dimColor: true }, text))
+    return h(Box, { flexDirection: 'column' }, own, inner)
   })
 
   on('session.start', async ($, e, next) => {
