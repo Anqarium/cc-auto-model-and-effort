@@ -30,7 +30,6 @@ describe('auto-model-effort', () => {
     on('command.register', ($, e) => ({ value: { command: e.name } }))
     on('ui.status', () => ({ value: undefined }))
     on('store.get', () => ({ value: undefined }))
-    on('store.set', () => ({ value: undefined })) // the temporary band-width diagnostic writes the store
     // Stands in for another plugin's band (token-weather) beneath this one.
     on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
       const { Text } = $.ui.resolve(e)

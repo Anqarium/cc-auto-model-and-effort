@@ -17,10 +17,10 @@ const LOG_MAX = 2000
 // How long the status notice stays at startup and after /auto.
 const NOTICE_MS = 4000
 // Band width (columns) from which the desktop label shares token-weather's row; below it it gets its own row.
-// Calibrated on screenshots (2026-11-10): the desktop's proportional font makes a column narrower than a character, so
-// counting characters overestimates (125 pushed the label up in a ~770 px band where both fit with room to spare).
-// The ~770 px band reports 100+ columns and fits both on one row; a ~575 px one (~75 columns) does not.
-const SAME_ROW_COLUMNS = 100
+// Measured on the desktop (2026-11-10, recorded `bodyColumns`): a ~770 px band reports 98-99 columns and fits both on
+// one row with room to spare, a ~575 px band reports 74 and does not. The desktop's proportional font makes a column
+// narrower than a character, so counting characters overestimates (125 and 100 both pushed the label up needlessly).
+const SAME_ROW_COLUMNS = 90
 
 type Decision = ReturnType<typeof decide>
 type ModelIds = Record<string, string>
@@ -122,8 +122,6 @@ export const register: Register = on => {
   let triageNote: string | undefined
   // How many screenshots the last prompt carried; logged with its first step.
   let imageCount = 0
-  // Last band width recorded by the temporary diagnostic in the AbovePrompt hook.
-  let lastCols = -1
 
   on('ui.render', { component: 'SessionMode' }, ($, e, next) => {
     const text = notice ?? lasting
@@ -135,16 +133,6 @@ export const register: Register = on => {
   // process). The terminal keeps the SessionMode label, so no duplicate there. Other bands (token-weather) are kept.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const inner = await next(e)
-    // TEMPORARY diagnostic (v0.1.15): record the band's width to calibrate SAME_ROW_COLUMNS; remove afterwards.
-    if (e.surface === 'desktop' && e.props.bodyColumns !== lastCols) {
-      lastCols = e.props.bodyColumns
-      try {
-        const seen = ((await $.store.get('bodyColumnsSeen')) as number[] | undefined) ?? []
-        await $.store.set('bodyColumnsSeen', [...seen, lastCols].slice(-40))
-      } catch {
-        // the diagnostic must never take the label down with it
-      }
-    }
     const text = notice ?? lasting
     if (e.surface !== 'desktop' || !text || e.props.hasSurvey) return inner
     const { Box, Text } = $.ui.resolve(e)
