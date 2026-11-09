@@ -17,9 +17,10 @@ const LOG_MAX = 2000
 // How long the status notice stays at startup and after /auto.
 const NOTICE_MS = 4000
 // Band width (columns) from which the desktop label shares token-weather's row; below it it gets its own row.
-// token-weather's full band (~86 columns, from its 88-column trend tier) plus this label (~35) needs ~125; a guess
-// to tune on real use (a wide window fit on one row, a ~575 px one wrapped).
-const SAME_ROW_COLUMNS = 125
+// Calibrated on screenshots (2026-11-10): the desktop's proportional font makes a column narrower than a character, so
+// counting characters overestimates (125 pushed the label up in a ~770 px band where both fit with room to spare).
+// The ~770 px band reports 100+ columns and fits both on one row; a ~575 px one (~75 columns) does not.
+const SAME_ROW_COLUMNS = 100
 
 type Decision = ReturnType<typeof decide>
 type ModelIds = Record<string, string>
