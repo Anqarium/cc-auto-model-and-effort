@@ -24,4 +24,28 @@ describe('auto-model-effort', () => {
     expect(await ui.find({ text: /auto on/ })).toBeUndefined()
     await ui.unmount()
   })
+  test('desktop: the label goes into the AbovePrompt band, other bands are kept; terminal gets none', async ($, on) => {
+    mock.clock(on)
+    on('session.start', ($, e) => ({ cwd: e.cwd }))
+    on('command.register', ($, e) => ({ value: { command: e.name } }))
+    on('ui.status', () => ({ value: undefined }))
+    on('store.get', () => ({ value: undefined }))
+    // Stands in for another plugin's band (token-weather) beneath this one.
+    on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
+      const { Text } = $.ui.resolve(e)
+      return h(Text, null, 'other band')
+    })
+    const props = { hasSurvey: false, isWorking: false }
+
+    await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
+    const desktop = await $.ui.mount({ plugin: 'auto-model-effort', surface: 'desktop', component: 'AbovePrompt', props })
+    expect(await desktop.find({ text: /auto on/ })).toBeDefined()
+    expect(await desktop.find({ text: /other band/ })).toBeDefined()
+    await desktop.unmount()
+
+    await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
+    const terminal = await $.ui.mount({ plugin: 'auto-model-effort', surface: 'terminal', component: 'AbovePrompt', props })
+    expect(await terminal.find({ text: /auto on/ })).toBeUndefined()
+    await terminal.unmount()
+  })
 })

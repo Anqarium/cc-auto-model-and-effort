@@ -1,6 +1,6 @@
 {
   "name": "auto-model-effort",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Automatically picks the main session's model and effort from each prompt's difficulty.",
   "author": {
     "name": "Anqarium"
