@@ -4,18 +4,43 @@ A Claude Code plugin (mod: `auto-model-effort`) that automatically picks the mod
 
 ## Install
 
-Requires Claude Code 2.1.296+ (the mod API is in early access).
+### Requirements
+
+- Claude Code 2.1.296 or newer (the mod API is in early access and may change between versions).
+- A Claude subscription (OAuth login). It was developed and tested on one; no proxy, background process or extra dependencies are needed.
+- Node is only needed to run the tests, not to use the plugin.
+
+### From GitHub
 
 ```
-/plugin install auto-model-effort --marketplace Anqarium/cc-auto-model-and-effort
+claude plugin marketplace add Anqarium/cc-auto-model-and-effort
+claude plugin install auto-model-effort@anqarium
 ```
 
-From a local clone (code changes apply with `/reload-plugins`):
+Then start `claude` as usual (or run `/reload-plugins` in a session that is already open). The mode label `⚡ auto on` appears for a few seconds at startup. The plugin is installed at user scope, so it applies to every project.
+
+### Update and uninstall
+
+```
+claude plugin marketplace update anqarium
+claude plugin update auto-model-effort@anqarium
+claude plugin uninstall auto-model-effort@anqarium
+```
+
+Updates are detected by the `version` in `.claude-plugin/plugin.json`. Run `/reload-plugins` in open sessions afterwards.
+
+### From a local clone
 
 ```
 claude plugin marketplace add <path to this repo>
 claude plugin install auto-model-effort@anqarium
 ```
+
+Or load it for one session only, without installing: `claude --plugin-dir <path to this repo>`.
+
+### Check that it works
+
+Run `claude plugin list` (it should show `auto-model-effort@anqarium`), send a prompt, then run `/auto-log` to see the model and effort chosen for it.
 
 ## Usage
 
