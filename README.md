@@ -44,7 +44,7 @@ Run `claude plugin list` (it should show `auto-model-effort@anqarium`), send a p
 
 ## Usage
 
-Once installed, plain `claude` is enough. Whatever model the session starts on (or you switch to with `/model`), every prompt gets a 0–100 score:
+Once installed, plain `claude` is enough. Whatever model the session starts on (or you switch to with `/model`), every prompt gets a 0–100 difficulty score, rated by Haiku (see [How the rating works](#how-the-rating-works)):
 
 | Prompt | Score | Model / effort |
 |---|---|---|
@@ -54,11 +54,26 @@ Once installed, plain `claude` is enough. Whatever model the session starts on (
 | Hard (architecture + design, root cause + security…) | 41–75 | Opus / medium |
 | Very hard and many-sided | 76+ | Opus / high |
 
-Medium is every model's default effort, so it covers the widest range; low is never used. Prompts are scored in English and Turkish. Subagents keep their own model. The chosen model and effort show as a dim label right of the prompt: `⚡ Opus 5.5 · medium · complex 49`.
+Medium is every model's default effort, so it covers the widest range; low is never used. The built-in fallback rules understand English and Turkish prompts. Subagents keep their own model. The chosen model and effort show as a dim label right of the prompt: `⚡ Opus 5.5 · medium · complex 49`.
 
 To force a specific model, type `/auto off`: routing stops for that session and your chosen model is used; `/auto on` turns it back on, `/auto` alone toggles. Every new session starts on. At startup and after `/auto`, a notice (`⚡ auto on · /auto to turn off` or `auto off · /auto to turn on`) shows for a few seconds. If a rewritten request is rejected, the same request is sent again on the session's own model.
 
 `/auto-log` summarizes the decisions, the model that actually answered, and cache usage.
+
+## How the rating works
+
+For each prompt you type, the plugin sends one small extra request to Claude Haiku. Haiku sees only that prompt (not the conversation) plus any screenshots attached to it, and replies with a single number from 0 to 100. That number picks the model and effort in the table above.
+
+What this means for you:
+
+- **Quota and latency:** one extra Haiku request per typed prompt counts against your subscription quota and adds a few seconds before the answer starts. Screenshots are billed again for that request. Short follow-ups such as "go on" skip it.
+- **Privacy:** the prompt text and screenshots go to `api.anthropic.com`, the same service Claude Code already talks to, using the session's own credential. Nothing is sent anywhere else, and the plugin has no server or telemetry.
+- **Fallback:** if the Haiku call fails or returns something unusable, a local rule-based score (keywords, code and length signals) is used instead. `/auto-log` shows when that happened and why.
+- **Local data:** decisions are kept in the plugin's own store (the last 2000 requests) for `/auto-log`. They hold scores and model names, not your prompt text.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
 
 ## Development
 
