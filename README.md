@@ -54,7 +54,7 @@ Once installed, plain `claude` is enough. Whatever model the session starts on (
 | Hard (architecture + design, root cause + security…) | 41–75 | Opus / medium |
 | Very hard and many-sided | 76+ | Opus / high |
 
-Medium is every model's default effort, so it covers the widest range; low is never used. The built-in fallback rules understand English and Turkish prompts. Subagents keep their own model. The chosen model and effort show as a label right of the prompt: dim `⚡ Sonnet 5.5 · medium · simple 12` for Haiku and Sonnet, amber `👑 Opus 5.5 · medium · complex 49` for Opus and purple `🔮 Fable 5.2 · high · expert 94` for Fable.
+Medium is every model's default effort, so it covers the widest range; low is never used. The built-in fallback rules understand English and Turkish prompts. Subagents keep their own model. The chosen model and effort show as a label right of the prompt: dim `⚡ Sonnet 5.5 · medium · simple 12` for Haiku and Sonnet, amber `🎼 Opus 5.5 · medium · complex 49` for Opus and purple `🔮 Fable 5.2 · high · expert 94` for Fable.
 
 To force a specific model, type `/auto off`: routing stops for that session and your chosen model is used; `/auto on` turns it back on, `/auto` alone toggles. Every new session starts on. At startup and after `/auto`, a notice (`⚡ auto on · /auto to turn off` or `auto off · /auto to turn on`) shows for a few seconds. If a rewritten request is rejected, the same request is sent again on the session's own model.
 

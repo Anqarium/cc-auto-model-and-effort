@@ -15,12 +15,12 @@ test("a forced model: label without a score, the draft's request line, the log w
 test("label: no prefix, short; nothing shown without a decision", () => {
   assert.equal(label(null), undefined);
   const decision = { model: "claude-opus-5-5", effort: "medium", level: "complex", score: 49, reason: "score" };
-  assert.equal(label({ decision }), "👑 Opus 5.5 · medium · complex 49");
+  assert.equal(label({ decision }), "🎼 Opus 5.5 · medium · complex 49");
   assert.equal(label({ decision, responseModel: "claude-haiku-5-5" }), "⚡ Haiku 5.5 · medium · complex 49");
-  assert.equal(label({ decision, responseModel: "claude-opus-5-5", sentEffort: "xhigh" }), "👑 Opus 5.5 · xhigh · complex 49");
-  assert.equal(label({ decision: { ...decision, reason: "short-followup" } }), "👑 Opus 5.5 · medium · complex 49 · short-followup");
+  assert.equal(label({ decision, responseModel: "claude-opus-5-5", sentEffort: "xhigh" }), "🎼 Opus 5.5 · xhigh · complex 49");
+  assert.equal(label({ decision: { ...decision, reason: "short-followup" } }), "🎼 Opus 5.5 · medium · complex 49 · short-followup");
   // The style follows the model that answered: Opus decided, Haiku answered → plain.
-  assert.deepEqual(labelStyle({ decision }), { icon: "👑", color: "warning" });
+  assert.deepEqual(labelStyle({ decision }), { icon: "🎼", color: "warning" });
   assert.deepEqual(labelStyle({ decision, responseModel: "claude-haiku-5-5" }), {});
   assert.deepEqual(labelStyle({ decision: { passive: true }, responseModel: "claude-opus-5-5" }), {});
   assert.equal(labelStyle({ decision: { model: "fable" } }).color, "merged");
