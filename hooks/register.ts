@@ -4,7 +4,7 @@
 import type { EngineInterface, Register, Timer } from 'claude-code'
 import { MODELS, SEED_IDS, decide, effortToSend, forcedModel, learnModel, modelKeywords, withoutFable } from '../lib/select.mjs'
 import { effortsFromCatalog, idsFromCatalog } from '../lib/catalog.mjs'
-import { autoCommand, fableNotice, label, labelStyle, logSummary, requestNotice, statusNotice, withFableCommand } from '../lib/display.mjs'
+import { autoCommand, fableNotice, label, labelStyle, logSummary, modelStyle, requestNotice, statusNotice, withFableCommand } from '../lib/display.mjs'
 import { TRIAGE_HEADERS, TRIAGE_URL, parseTriageResponse, promptImages, triageBody } from '../lib/triage.mjs'
 
 // Above this many conversation tokens the model is not downgraded (the new model would rewrite the cache).
@@ -21,6 +21,9 @@ const NOTICE_MS = 4000
 // one row with room to spare, a ~575 px band reports 74 and does not. The desktop's proportional font makes a column
 // narrower than a character, so counting characters overestimates (125 and 100 both pushed the label up needlessly).
 const SAME_ROW_COLUMNS = 90
+// Columns token-weather's band takes, measured the same way (90 less a ~30-column label); the draft's request line is
+// longer than the label, so it shares the row only from BAND_COLUMNS + its own length.
+const BAND_COLUMNS = 60
 
 type Decision = ReturnType<typeof decide>
 type ModelIds = Record<string, string>
@@ -112,13 +115,41 @@ function labelText($: EngineInterface, e: Parameters<EngineInterface['ui']['reso
   return !notice && lastingColor ? h(Text, { color: lastingColor, bold: lastingBold }, text) : h(Text, { dimColor: true }, text)
 }
 
-// While the draft names a model ("fable", "opus"...), a line above the prompt says that model will answer it.
-let draftRequest: string | undefined
+// While the draft names a model ("fable", "opus"...), a line above the prompt says that model will answer it;
+// alt+w (Claude Code's own ultracode "ignore" chord, `chat:workflowKeywordToggle`) toggles ignoring it for this prompt.
+let draftModel: string | undefined
+let draftIgnored = false
 
-function setDraftRequest($: EngineInterface, text: string | undefined) {
-  if (text === draftRequest) return
-  draftRequest = text
+// `edited`: the person typed (a keyword-free draft clears alt+w, so the next keyword starts un-ignored). A clear
+// (the submit takes the draft before turn.start) must keep it: turn.start reads it, then resets it.
+function setDraftModel($: EngineInterface, model: string | undefined, edited = false) {
+  if (edited && !model) draftIgnored = false
+  if (model === draftModel) return
+  draftModel = model
   $.ui.invalidate('ui.render')
+}
+
+function toggleDraftIgnored($: EngineInterface) {
+  draftIgnored = !draftIgnored
+  $.ui.invalidate('ui.render')
+}
+
+// The request line: "Fable 5.2 requested for this turn · alt+w to ignore", the hint a Button bound to alt+w.
+function requestLine($: EngineInterface, e: Parameters<EngineInterface['ui']['resolve']>[0], model: string) {
+  const { Box, Text, Button } = $.ui.resolve(e)
+  return h(
+    Box,
+    { flexDirection: 'row' },
+    h(Text, { dimColor: true }, `${requestNotice(model, draftIgnored)} · `),
+    h(Button, {
+      key: 'ignore-model-keyword',
+      label: draftIgnored ? 'alt+w to undo' : 'alt+w to ignore',
+      plain: true,
+      dimColor: true,
+      action: 'chat:workflowKeywordToggle',
+      onPress: () => toggleDraftIgnored($),
+    }),
+  )
 }
 
 function notify($: EngineInterface, text: string) {
@@ -164,19 +195,21 @@ export const register: Register = on => {
     const inner = await next(e)
     if (e.props.hasSurvey) return inner
     const text = e.surface === 'desktop' ? (notice ?? lasting) : undefined
-    if (!text && !draftRequest) return inner
-    const { Box, Text } = $.ui.resolve(e)
-    const ownRow = (t: ReturnType<typeof h>) => h(Box, { paddingX: 1, justifyContent: 'flex-end' }, t)
-    let body = inner
-    if (text) {
-      // Same row as the band beneath (token-weather's), ours at the far right; alone it is right-aligned. In a narrow
-      // window both would wrap into a mess, so the label goes on its own row, right-aligned, above the band.
-      body = inner && e.props.bodyColumns >= SAME_ROW_COLUMNS
-        ? h(Box, { flexDirection: 'row', justifyContent: 'space-between' }, inner, h(Box, { paddingX: 1 }, labelText($, e, text)))
-        : h(Box, { flexDirection: 'column' }, ownRow(labelText($, e, text)), inner)
+    if (!text && !draftModel) return inner
+    const { Box } = $.ui.resolve(e)
+    // Ours, right-aligned: the draft's model request (every surface, like ultracode's line) over the desktop label.
+    const rows = [
+      ...(draftModel ? [requestLine($, e, draftModel)] : []),
+      ...(text ? [labelText($, e, text)] : []),
+    ]
+    const right = h(Box, { paddingX: 1, flexDirection: 'column', alignItems: 'flex-end' }, ...rows)
+    // Same row as the band beneath (token-weather's), ours at the far right. In a narrow window both would wrap into
+    // a mess, so ours goes on its own rows above the band. The request line needs room for its own text.
+    const need = draftModel ? BAND_COLUMNS + requestNotice(draftModel, draftIgnored).length + 20 : SAME_ROW_COLUMNS
+    if (inner && e.props.bodyColumns >= need) {
+      return h(Box, { flexDirection: 'row', justifyContent: 'space-between' }, inner, right)
     }
-    // The draft's model request goes on top, right-aligned, on every surface (like ultracode's line).
-    return draftRequest ? h(Box, { flexDirection: 'column' }, ownRow(h(Text, { dimColor: true }, draftRequest)), body) : body
+    return h(Box, { flexDirection: 'column' }, h(Box, { justifyContent: 'flex-end' }, right), inner)
   })
 
   // A model name in the draft: painted in the box and announced above it; the decision is made at turn.start.
@@ -184,15 +217,16 @@ export const register: Register = on => {
     const r = await next(e)
     const words = enabled ? modelKeywords(r.text) : []
     const forced = words.length ? forcedModel(r.text) : undefined
-    setDraftRequest($, forced ? requestNotice(ids[forced] ?? forced) : undefined)
-    if (!words.length) return r
-    const paint = words.map(w => ({ start: w.start, end: w.end, color: 'claude', bold: true }))
+    setDraftModel($, forced ? (ids[forced] ?? forced) : undefined, true)
+    if (!words.length || draftIgnored) return r
+    // Each name in its own model's color (lib/display.mjs labelStyle).
+    const paint = words.map(w => ({ start: w.start, end: w.end, color: modelStyle(w.family).color ?? 'claude', bold: true }))
     return { ...r, decorations: [...(r.decorations ?? []), ...paint] }
   })
 
   on('prompt.change', ($, e, next) => {
     const forced = enabled ? forcedModel(e.text) : undefined
-    setDraftRequest($, forced ? requestNotice(ids[forced] ?? forced) : undefined)
+    setDraftModel($, forced ? (ids[forced] ?? forced) : undefined)
     return next(e)
   })
 
@@ -243,7 +277,11 @@ export const register: Register = on => {
   on('turn.start', async ($, e, next) => {
     // Empty text is a turn without a typed prompt (a background agent's notification, a continuation):
     // the previous decision stands.
-    setDraftRequest($, undefined)
+    const keywords = !draftIgnored // alt+w on the draft: its model name is ignored for this prompt
+    if (e.text.trim()) {
+      draftIgnored = false
+      setDraftModel($, undefined)
+    }
     if (enabled && e.text.trim()) {
       const learned = await learnFromCatalog($, ids)
       ids = learned.ids
@@ -258,7 +296,7 @@ export const register: Register = on => {
       let triageFailed = false
       triageNote = undefined
       // A typed model name decides on its own (lib/select.mjs forcedModel), so Haiku is not asked.
-      if (!forcedModel(e.text) && !(decision && e.text.trim().length < SHORT_PROMPT && !images.length)) {
+      if (!(keywords && forcedModel(e.text)) && !(decision && e.text.trim().length < SHORT_PROMPT && !images.length)) {
         const r = await triageCall($, e.text, images, ids.haiku ?? SEED_IDS.haiku)
         triage = r.score
         triageFailed = triage === undefined
@@ -274,6 +312,7 @@ export const register: Register = on => {
         images: images.length,
         efforts,
         fable: withFable,
+        keywords,
       })
       show($, { decision })
     }

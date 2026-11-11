@@ -123,6 +123,10 @@ test("a typed model name forces it: no score, default effort, Fable even with /w
   assert.equal(held.model, MODELS.haiku); // no hysteresis for a named model
   const followup = decide("devam et", { previous: d });
   assert.deepEqual([followup.model, followup.reason], [MODELS.fable, "short-followup"]);
+  // alt+w on the draft: the name is ignored and the prompt is rated like any other.
+  const ignored = decide("bunu fable ile çöz", { keywords: false });
+  assert.notEqual(ignored.reason, "keyword");
+  assert.notEqual(ignored.model, MODELS.fable);
   const next = decide("bu fonksiyonu yeniden adlandır", { previous: d, contextTokens: 50000 });
   assert.equal(next.model, MODELS.opus); // later prompts: Fable counts as Opus while /with-fable is off
 });

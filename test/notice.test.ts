@@ -24,6 +24,29 @@ describe('auto-model-effort', () => {
     expect(await ui.find({ text: /auto on/ })).toBeUndefined()
     await ui.unmount()
   })
+  test('a model name in the draft: a request line with an alt+w button above the prompt, beside other bands', async ($, on) => {
+    mock.clock(on)
+    on('session.start', ($, e) => ({ cwd: e.cwd }))
+    on('command.register', ($, e) => ({ value: { command: e.name } }))
+    on('ui.status', () => ({ value: undefined }))
+    on('store.get', () => ({ value: undefined }))
+    on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
+      const { Text } = $.ui.resolve(e)
+      return h(Text, null, 'other band')
+    })
+    on('prompt.change', ($, e) => ({ text: e.text })) // stands in for core, which echoes the box
+    await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
+    await $.prompt.change({ text: 'fable ile çöz', cursor: 13, origin: { kind: 'history' } })
+    const props = { hasSurvey: false, isWorking: false, bodyColumns: 160 }
+    const band = await $.ui.mount({ plugin: 'auto-model-effort', surface: 'terminal', component: 'AbovePrompt', props })
+    expect(await band.find({ text: /Fable 5\.2 requested for this turn/ })).toBeDefined()
+    expect(await band.find({ text: /alt\+w to ignore/ })).toBeDefined()
+    expect(await band.find({ text: /other band/ })).toBeDefined()
+    await band.press({ key: 'ignore-model-keyword' }) // what alt+w does
+    expect(await band.find({ text: /Fable 5\.2 ignored for this turn/ })).toBeDefined()
+    expect(await band.find({ text: /alt\+w to undo/ })).toBeDefined()
+    await band.unmount()
+  })
   test('desktop: the label goes into the AbovePrompt band, other bands are kept; terminal gets none', async ($, on) => {
     mock.clock(on)
     on('session.start', ($, e) => ({ cwd: e.cwd }))
