@@ -2,9 +2,9 @@
 // with the chosen model + effort. The decision logic and the display text live in pure modules under lib/
 // (lib/select.mjs, lib/display.mjs), kept out of the mod code so they can be tested with Node.
 import type { EngineInterface, Register, Timer } from 'claude-code'
-import { MODELS, SEED_IDS, decide, effortToSend, learnModel, withoutFable } from '../lib/select.mjs'
+import { MODELS, SEED_IDS, decide, effortToSend, forcedModel, learnModel, modelKeywords, withoutFable } from '../lib/select.mjs'
 import { effortsFromCatalog, idsFromCatalog } from '../lib/catalog.mjs'
-import { autoCommand, fableNotice, label, logSummary, statusNotice, withFableCommand } from '../lib/display.mjs'
+import { autoCommand, fableNotice, label, logSummary, requestNotice, statusNotice, withFableCommand } from '../lib/display.mjs'
 import { TRIAGE_HEADERS, TRIAGE_URL, parseTriageResponse, promptImages, triageBody } from '../lib/triage.mjs'
 
 // Above this many conversation tokens the model is not downgraded (the new model would rewrite the cache).
@@ -100,6 +100,15 @@ function show($: EngineInterface, d: Parameters<typeof label>[0]) {
   $.ui.invalidate('ui.render')
 }
 
+// While the draft names a model ("fable", "opus"...), a line above the prompt says that model will answer it.
+let draftRequest: string | undefined
+
+function setDraftRequest($: EngineInterface, text: string | undefined) {
+  if (text === draftRequest) return
+  draftRequest = text
+  $.ui.invalidate('ui.render')
+}
+
 function notify($: EngineInterface, text: string) {
   noticeTimer?.cancel()
   notice = text
@@ -135,17 +144,38 @@ export const register: Register = on => {
   // process). The terminal keeps the SessionMode label, so no duplicate there. Other bands (token-weather) are kept.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const inner = await next(e)
-    const text = notice ?? lasting
-    if (e.surface !== 'desktop' || !text || e.props.hasSurvey) return inner
+    if (e.props.hasSurvey) return inner
+    const text = e.surface === 'desktop' ? (notice ?? lasting) : undefined
+    if (!text && !draftRequest) return inner
     const { Box, Text } = $.ui.resolve(e)
-    const line = h(Box, { paddingX: 1 }, h(Text, { dimColor: true }, text))
-    // Same row as the band beneath (token-weather's), ours at the far right; alone it is right-aligned. In a narrow
-    // window both would wrap into a mess, so the label goes on its own row, right-aligned, above the band.
-    if (inner && e.props.bodyColumns >= SAME_ROW_COLUMNS) {
-      return h(Box, { flexDirection: 'row', justifyContent: 'space-between' }, inner, line)
+    const ownRow = (t: string) => h(Box, { paddingX: 1, justifyContent: 'flex-end' }, h(Text, { dimColor: true }, t))
+    let body = inner
+    if (text) {
+      // Same row as the band beneath (token-weather's), ours at the far right; alone it is right-aligned. In a narrow
+      // window both would wrap into a mess, so the label goes on its own row, right-aligned, above the band.
+      body = inner && e.props.bodyColumns >= SAME_ROW_COLUMNS
+        ? h(Box, { flexDirection: 'row', justifyContent: 'space-between' }, inner, h(Box, { paddingX: 1 }, h(Text, { dimColor: true }, text)))
+        : h(Box, { flexDirection: 'column' }, ownRow(text), inner)
     }
-    const own = h(Box, { paddingX: 1, justifyContent: 'flex-end' }, h(Text, { dimColor: true }, text))
-    return h(Box, { flexDirection: 'column' }, own, inner)
+    // The draft's model request goes on top, right-aligned, on every surface (like ultracode's line).
+    return draftRequest ? h(Box, { flexDirection: 'column' }, ownRow(draftRequest), body) : body
+  })
+
+  // A model name in the draft: painted in the box and announced above it; the decision is made at turn.start.
+  on('prompt.edit', async ($, e, next) => {
+    const r = await next(e)
+    const words = enabled ? modelKeywords(r.text) : []
+    const forced = words.length ? forcedModel(r.text) : undefined
+    setDraftRequest($, forced ? requestNotice(ids[forced] ?? forced) : undefined)
+    if (!words.length) return r
+    const paint = words.map(w => ({ start: w.start, end: w.end, color: 'claude', bold: true }))
+    return { ...r, decorations: [...(r.decorations ?? []), ...paint] }
+  })
+
+  on('prompt.change', ($, e, next) => {
+    const forced = enabled ? forcedModel(e.text) : undefined
+    setDraftRequest($, forced ? requestNotice(ids[forced] ?? forced) : undefined)
+    return next(e)
   })
 
   on('session.start', async ($, e, next) => {
@@ -195,6 +225,7 @@ export const register: Register = on => {
   on('turn.start', async ($, e, next) => {
     // Empty text is a turn without a typed prompt (a background agent's notification, a continuation):
     // the previous decision stands.
+    setDraftRequest($, undefined)
     if (enabled && e.text.trim()) {
       const learned = await learnFromCatalog($, ids)
       ids = learned.ids
@@ -208,7 +239,8 @@ export const register: Register = on => {
       let triage: number | undefined
       let triageFailed = false
       triageNote = undefined
-      if (!(decision && e.text.trim().length < SHORT_PROMPT && !images.length)) {
+      // A typed model name decides on its own (lib/select.mjs forcedModel), so Haiku is not asked.
+      if (!forcedModel(e.text) && !(decision && e.text.trim().length < SHORT_PROMPT && !images.length)) {
         const r = await triageCall($, e.text, images, ids.haiku ?? SEED_IDS.haiku)
         triage = r.score
         triageFailed = triage === undefined

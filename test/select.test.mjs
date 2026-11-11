@@ -2,7 +2,7 @@
 // raise turn.step, so the logic is tested here directly.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MODELS, SEED_IDS, decide, effortFor, effortToSend, familyOf, learnModel, versionOf, withoutFable } from "../lib/select.mjs";
+import { MODELS, SEED_IDS, decide, effortFor, effortToSend, familyOf, forcedModel, learnModel, modelKeywords, versionOf, withoutFable } from "../lib/select.mjs";
 
 test("ultrathink: an incoming xhigh/max effort is kept, anything else takes the mod's choice", () => {
   assert.equal(effortToSend("xhigh", "medium"), "xhigh");
@@ -104,6 +104,27 @@ test("a standing Fable decision is rewritten for Opus when Fable is turned off",
   assert.deepEqual(withoutFable(previous, {}).model, MODELS.opus);
   const sonnet = decide("Implement the feature");
   assert.equal(withoutFable(sonnet), sonnet); // not a Fable decision: untouched
+});
+
+test("model keywords: whole words only, with positions; the most capable name wins", () => {
+  assert.deepEqual(modelKeywords("modeli Fable'a geçir"), [{ family: "fable", start: 7, end: 12 }]);
+  assert.equal(forcedModel("modeli fable yap haiku. Fable modelini deneyeceğiz"), MODELS.fable);
+  assert.equal(forcedModel("opus ile bak"), MODELS.opus);
+  assert.equal(forcedModel("use Sonnet."), MODELS.sonnet); // sentence end is fine
+  for (const t of ["claude-opus-5-5 id'si", "/with-fable on", "fable.md dosyası", "opuslar", "haikus", "~/fable/x", "no model here"]) {
+    assert.equal(forcedModel(t), undefined, t);
+  }
+});
+
+test("a typed model name forces it: no score, default effort, Fable even with /with-fable off; it carries on through go on", () => {
+  const d = decide("bunu fable ile çöz", { efforts: { fable: { base: "medium", up: "high" } } });
+  assert.deepEqual([d.model, d.effort, d.level, d.score, d.reason, d.forced], [MODELS.fable, "medium", "forced", null, "keyword", true]);
+  const held = decide("bu fonksiyonu haiku ile yeniden adlandır", { previous: decide(EXPERT, { triage: 90 }), contextTokens: 50000 });
+  assert.equal(held.model, MODELS.haiku); // no hysteresis for a named model
+  const followup = decide("devam et", { previous: d });
+  assert.deepEqual([followup.model, followup.reason], [MODELS.fable, "short-followup"]);
+  const next = decide("bu fonksiyonu yeniden adlandır", { previous: d, contextTokens: 50000 });
+  assert.equal(next.model, MODELS.opus); // later prompts: Fable counts as Opus while /with-fable is off
 });
 
 test("effortFor follows the default effort the catalog gives; without it medium / high", () => {

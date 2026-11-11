@@ -1,6 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { autoCommand, fableNotice, label, logSummary, statusNotice, withFableCommand } from "../lib/display.mjs";
+import { autoCommand, fableNotice, label, logSummary, requestNotice, statusNotice, withFableCommand } from "../lib/display.mjs";
+
+test("a forced model: label without a score, the draft's request line, the log without (null)", () => {
+  const decision = { model: "claude-fable-5-2", effort: "medium", level: "forced", score: null, reason: "keyword", forced: true };
+  assert.equal(label({ decision }), "⚡ Fable 5.2 · medium · forced");
+  assert.equal(label({ decision: { ...decision, reason: "short-followup" } }), "⚡ Fable 5.2 · medium · forced · short-followup");
+  assert.equal(requestNotice("claude-fable-5-2"), "Fable 5.2 requested for this turn");
+  const log = logSummary([{ t: "2026-11-12T10:00:00.000Z", step: 0, ...decision, responseModel: "claude-fable-5-2" }]);
+  assert.match(log, /Fable 5\.2 medium {2}forced · keyword/);
+  assert.doesNotMatch(log, /null/);
+});
 
 test("label: no prefix, short; nothing shown without a decision", () => {
   assert.equal(label(null), undefined);
