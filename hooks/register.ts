@@ -129,33 +129,39 @@ function setDraftModel($: EngineInterface, model: string | undefined, edited = f
   $.ui.invalidate('ui.render')
 }
 
-function toggleDraftIgnored($: EngineInterface) {
+// Each model name in the draft, painted in its own model's color (lib/display.mjs modelStyle).
+function keywordPaint(text: string) {
+  return modelKeywords(text).map(w => ({ start: w.start, end: w.end, color: modelStyle(w.family).color ?? 'claude', bold: true }))
+}
+
+// The paint follows at once: a prompt.edit answer only repaints on the next keystroke, $.prompt.paint does it now.
+async function toggleDraftIgnored($: EngineInterface) {
   draftIgnored = !draftIgnored
   $.ui.invalidate('ui.render')
+  const { text } = await $.prompt.read()
+  await $.prompt.paint(draftIgnored ? { decorations: [] } : { text, decorations: keywordPaint(text) })
 }
 
 // A mod cannot bind its own keys: a Button's `action` names an engine keybinding action, and its chord presses the
 // Button only while no engine handler of that action is mounted. alt+w (chat:workflowKeywordToggle, ultracode's)
-// never reached it: that handler is always mounted (tried 2026-11-12). Under trial (v0.1.24): ctrl+x b
-// (app:cycleDiffBase, the types' own example; its handler is mounted only with the diff panel open) and ctrl+y
-// (chat:defaultToNewerModel; Claude Code's handler gives the key up while the prompt holds text).
-const IGNORE_KEYS = [
-  { key: 'ignore-model-keyword', label: 'ctrl+x b', action: 'app:cycleDiffBase' },
-  { key: 'ignore-model-keyword-y', label: 'ctrl+y', action: 'chat:defaultToNewerModel' },
-]
-
-// The request line: "Fable 5.2 requested for this turn · ctrl+x b / ctrl+y to ignore", each chord a Button.
+// never reached it: that handler is always mounted; nor did ctrl+y (chat:defaultToNewerModel). ctrl+x b
+// (app:cycleDiffBase, the types' own example; its handler is mounted only with the diff panel open) works
+// (tried on screen 2026-11-12).
+// The request line: "Fable 5.2 requested for this turn · ctrl+x b to ignore", the chord a Button.
 function requestLine($: EngineInterface, e: Parameters<EngineInterface['ui']['resolve']>[0], model: string) {
   const { Box, Text, Button } = $.ui.resolve(e)
-  const buttons = IGNORE_KEYS.flatMap((k, i) => [
-    ...(i ? [h(Text, { dimColor: true }, ' / ')] : []),
-    h(Button, { key: k.key, label: k.label, plain: true, dimColor: true, action: k.action, onPress: () => toggleDraftIgnored($) }),
-  ])
   return h(
     Box,
     { flexDirection: 'row' },
     h(Text, { dimColor: true }, `${requestNotice(model, draftIgnored)} · `),
-    ...buttons,
+    h(Button, {
+      key: 'ignore-model-keyword',
+      label: 'ctrl+x b',
+      plain: true,
+      dimColor: true,
+      action: 'app:cycleDiffBase',
+      onPress: () => toggleDraftIgnored($),
+    }),
     h(Text, { dimColor: true }, draftIgnored ? ' to undo' : ' to ignore'),
   )
 }
@@ -213,7 +219,7 @@ export const register: Register = on => {
     const right = h(Box, { paddingX: 1, flexDirection: 'column', alignItems: 'flex-end' }, ...rows)
     // Same row as the band beneath (token-weather's), ours at the far right. In a narrow window both would wrap into
     // a mess, so ours goes on its own rows above the band. The request line needs room for its own text.
-    const need = draftModel ? BAND_COLUMNS + requestNotice(draftModel, draftIgnored).length + 32 : SAME_ROW_COLUMNS
+    const need = draftModel ? BAND_COLUMNS + requestNotice(draftModel, draftIgnored).length + 22 : SAME_ROW_COLUMNS
     if (inner && e.props.bodyColumns >= need) {
       return h(Box, { flexDirection: 'row', justifyContent: 'space-between' }, inner, right)
     }
@@ -227,9 +233,7 @@ export const register: Register = on => {
     const forced = words.length ? forcedModel(r.text) : undefined
     setDraftModel($, forced ? (ids[forced] ?? forced) : undefined, true)
     if (!words.length || draftIgnored) return r
-    // Each name in its own model's color (lib/display.mjs labelStyle).
-    const paint = words.map(w => ({ start: w.start, end: w.end, color: modelStyle(w.family).color ?? 'claude', bold: true }))
-    return { ...r, decorations: [...(r.decorations ?? []), ...paint] }
+    return { ...r, decorations: [...(r.decorations ?? []), ...keywordPaint(r.text)] }
   })
 
   on('prompt.change', ($, e, next) => {

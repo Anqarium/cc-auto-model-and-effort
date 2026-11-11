@@ -35,6 +35,10 @@ describe('auto-model-effort', () => {
       return h(Text, null, 'other band')
     })
     on('prompt.change', ($, e) => ({ text: e.text })) // stands in for core, which echoes the box
+    // The press reads the draft and repaints it at once; record what it paints.
+    const painted: unknown[] = []
+    on('prompt.read', () => ({ value: { text: 'fable ile çöz', cursor: 13 } }))
+    on('prompt.paint', ($, e) => (painted.push(e.decorations), { value: { isPainted: true, text: 'fable ile çöz', cursor: 13 } }))
     await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
     await $.prompt.change({ text: 'fable ile çöz', cursor: 13, origin: { kind: 'history' } })
     const props = { hasSurvey: false, isWorking: false, bodyColumns: 160 }
@@ -46,6 +50,9 @@ describe('auto-model-effort', () => {
     await band.press({ key: 'ignore-model-keyword' }) // what ctrl+x b does
     expect(await band.find({ text: /Fable 5\.2 ignored for this turn/ })).toBeDefined()
     expect(await band.find({ text: / to undo/ })).toBeDefined()
+    expect(painted).toEqual([[]]) // ignored: the name's paint is cleared
+    await band.press({ key: 'ignore-model-keyword' }) // undo: painted again, Fable's purple
+    expect(painted[1]).toEqual([{ start: 0, end: 5, color: 'merged', bold: true }])
     await band.unmount()
   })
   test('desktop: the label goes into the AbovePrompt band, other bands are kept; terminal gets none', async ($, on) => {
