@@ -154,3 +154,4 @@ vite.config.ts.timestamp-*
 .claude/settings.local.json
 .claude-plugin/types/
 /tsconfig.json
+/builtin/
