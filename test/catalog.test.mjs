@@ -14,7 +14,8 @@ test("idsFromCatalog lists the model ids of a catalog and nothing for other inpu
 test("a newer release in the catalog becomes the routed id; other families and older ids do not matter", () => {
   const ids = idsFromCatalog(catalog(["claude-opus-5-6", "claude-sonnet-5-5", "claude-haiku-4-5-20251001", "claude-fable-5-1"]));
   const learned = ids.reduce(learnModel, SEED_IDS);
-  assert.deepEqual(learned, { haiku: "claude-haiku-5-5", sonnet: "claude-sonnet-5-5", opus: "claude-opus-5-6" });
+  // An older Fable (5.1) does not lower the seed's 5.2.
+  assert.deepEqual(learned, { haiku: "claude-haiku-5-5", sonnet: "claude-sonnet-5-5", opus: "claude-opus-5-6", fable: "claude-fable-5-2" });
 });
 
 test("effortsFromCatalog reads the Recommended effort as the default and the next option as the step up", () => {

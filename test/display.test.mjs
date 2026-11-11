@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { autoCommand, label, logSummary, statusNotice } from "../lib/display.mjs";
+import { autoCommand, fableNotice, label, logSummary, statusNotice, withFableCommand } from "../lib/display.mjs";
 
 test("label: no prefix, short; nothing shown without a decision", () => {
   assert.equal(label(null), undefined);
@@ -26,6 +26,20 @@ test("autoCommand: no argument toggles, on/off set, unknown keeps the state", ()
   assert.equal(unknown.enabled, true);
   assert.match(unknown.message, /Usage: \/auto \[on\|off\]/);
   assert.doesNotMatch(autoCommand("off", true).message, /auto-model-effort/); // Claude Code adds the plugin name itself
+});
+
+test("withFableCommand: toggles like /auto, unknown keeps the state; Fable ids are named", () => {
+  assert.equal(withFableCommand("", false).enabled, true);
+  assert.equal(withFableCommand("OFF", true).enabled, false);
+  assert.equal(withFableCommand("on", false).enabled, true);
+  const unknown = withFableCommand("maybe", true);
+  assert.equal(unknown.enabled, true);
+  assert.match(unknown.message, /Usage: \/with-fable \[on\|off\]/);
+  assert.doesNotMatch(withFableCommand("on", false).message, /auto-model-effort/);
+  assert.equal(fableNotice(true), "⚡ Fable on · /with-fable to turn off");
+  assert.equal(fableNotice(false), "Fable off · /with-fable to turn on");
+  const decision = { model: "claude-fable-5-2", effort: "medium", level: "expert", score: 80, reason: "score" };
+  assert.equal(label({ decision }), "⚡ Fable 5.2 · medium · expert 80");
 });
 
 test("logSummary: distribution, actual model/cache totals, fallbacks and skipped", () => {

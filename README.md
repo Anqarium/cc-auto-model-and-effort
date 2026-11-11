@@ -58,6 +58,8 @@ Medium is every model's default effort, so it covers the widest range; low is ne
 
 To force a specific model, type `/auto off`: routing stops for that session and your chosen model is used; `/auto on` turns it back on, `/auto` alone toggles. Every new session starts on. At startup and after `/auto`, a notice (`⚡ auto on · /auto to turn off` or `auto off · /auto to turn on`) shows for a few seconds. If a rewritten request is rejected, the same request is sent again on the session's own model.
 
+**Fable (opt-in, 4 models instead of 3):** Fable costs about twice Opus per token, so it is never used by default. Type `/with-fable` (or `/with-fable on`) to let prompts rated expert (above 65) go to Fable instead of Opus; effort is Fable's default (medium), one step up above 85. Once on, it stays on Fable in a long conversation (the same no-downgrade rule as the other models, above 30K tokens) so the cache is kept. `/with-fable off` (or `/with-fable` alone to toggle) turns it off and a standing Fable decision goes back to Opus. It applies to the current session only; every new session starts with Fable off. If your plan cannot call the newest Fable, the rejected request is sent again on the session's own model.
+
 `/auto-log` summarizes the decisions, the model that actually answered, and cache usage.
 
 ## How the rating works

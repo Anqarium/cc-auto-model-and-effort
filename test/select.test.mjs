@@ -2,7 +2,7 @@
 // raise turn.step, so the logic is tested here directly.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { MODELS, SEED_IDS, decide, effortFor, effortToSend, learnModel, versionOf } from "../lib/select.mjs";
+import { MODELS, SEED_IDS, decide, effortFor, effortToSend, familyOf, learnModel, versionOf, withoutFable } from "../lib/select.mjs";
 
 test("ultrathink: an incoming xhigh/max effort is kept, anything else takes the mod's choice", () => {
   assert.equal(effortToSend("xhigh", "medium"), "xhigh");
@@ -61,6 +61,49 @@ test("hysteresis: with a large context, no downgrade below the previous or the c
   const first = decide("bu fonksiyonu yeniden adlandır", { clientModel: MODELS.sonnet, contextTokens: 50000 });
   assert.equal(first.model, MODELS.sonnet);
   assert.equal(decide("bu fonksiyonu yeniden adlandır", { previous, contextTokens: 1000 }).model, MODELS.haiku);
+});
+
+const EXPERT = "explain the architecture and root cause of this bug in detail";
+
+test("fable ids: family, version and learning", () => {
+  assert.equal(familyOf("claude-fable-5-2"), MODELS.fable);
+  assert.deepEqual(["claude-fable-5-2", "claude-fable-5"].map(versionOf), [[5, 2], [5, 0]]);
+  assert.equal(learnModel(SEED_IDS, "claude-fable-5-3").fable, "claude-fable-5-3");
+  assert.equal(learnModel(SEED_IDS, "claude-fable-5-1"), SEED_IDS); // older than the seed: ignored
+});
+
+test("with Fable off nothing changes: an expert prompt stays on Opus", () => {
+  const d = decide(EXPERT, { triage: 90 });
+  assert.deepEqual([d.model, d.effort], [MODELS.opus, "high"]);
+});
+
+test("with Fable on only an expert prompt goes to Fable; effort follows its own threshold", () => {
+  const expert = decide(EXPERT, { triage: 70, fable: true });
+  assert.deepEqual([expert.model, expert.level, expert.effort], [MODELS.fable, "expert", "medium"]);
+  assert.equal(decide(EXPERT, { triage: 90, fable: true }).effort, "high");
+  assert.equal(decide(EXPERT, { triage: 60, fable: true }).model, MODELS.opus); // complex, not expert
+  assert.equal(decide("bu servisin mimari tasarımını yap", { fable: true }).model, MODELS.opus);
+  assert.equal(decide(EXPERT, { triage: 90, fable: true, efforts: { fable: { base: "high", up: "xhigh" } } }).effort, "xhigh");
+});
+
+test("hysteresis holds on Fable while it is on, and never once it is off", () => {
+  const previous = decide(EXPERT, { triage: 90, fable: true });
+  const held = decide("bu fonksiyonu yeniden adlandır", { previous, contextTokens: 50000, fable: true });
+  assert.deepEqual([held.model, held.reason], [MODELS.fable, "cache-hysteresis"]);
+  const off = decide("bu fonksiyonu yeniden adlandır", { previous, contextTokens: 50000 });
+  assert.deepEqual([off.model, off.reason], [MODELS.opus, "cache-hysteresis"]); // Fable counts as Opus
+  assert.equal(decide("bu fonksiyonu yeniden adlandır", { previous, contextTokens: 1000, fable: true }).model, MODELS.haiku);
+  assert.equal(decide("hello", { clientModel: "claude-fable-5-2", contextTokens: 50000 }).model, MODELS.opus); // session itself on Fable
+});
+
+test("a standing Fable decision is rewritten for Opus when Fable is turned off", () => {
+  const previous = decide(EXPERT, { triage: 90, fable: true });
+  const followup = decide("devam et", { previous });
+  assert.deepEqual([followup.model, followup.effort, followup.reason], [MODELS.opus, "high", "fable-off"]);
+  assert.equal(decide("devam et", { previous, fable: true }).model, MODELS.fable);
+  assert.deepEqual(withoutFable(previous, {}).model, MODELS.opus);
+  const sonnet = decide("Implement the feature");
+  assert.equal(withoutFable(sonnet), sonnet); // not a Fable decision: untouched
 });
 
 test("effortFor follows the default effort the catalog gives; without it medium / high", () => {

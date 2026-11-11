@@ -2,9 +2,9 @@
 // with the chosen model + effort. The decision logic and the display text live in pure modules under lib/
 // (lib/select.mjs, lib/display.mjs), kept out of the mod code so they can be tested with Node.
 import type { EngineInterface, Register, Timer } from 'claude-code'
-import { MODELS, SEED_IDS, decide, effortToSend, learnModel } from '../lib/select.mjs'
+import { MODELS, SEED_IDS, decide, effortToSend, learnModel, withoutFable } from '../lib/select.mjs'
 import { effortsFromCatalog, idsFromCatalog } from '../lib/catalog.mjs'
-import { autoCommand, label, logSummary, statusNotice } from '../lib/display.mjs'
+import { autoCommand, fableNotice, label, logSummary, statusNotice, withFableCommand } from '../lib/display.mjs'
 import { TRIAGE_HEADERS, TRIAGE_URL, parseTriageResponse, promptImages, triageBody } from '../lib/triage.mjs'
 
 // Above this many conversation tokens the model is not downgraded (the new model would rewrite the cache).
@@ -118,6 +118,8 @@ export const register: Register = on => {
   let efforts: Efforts = {}
   // Routes whatever model the session is on; /auto off stops it (this session only).
   let enabled = true
+  // /with-fable: an expert prompt may go to Fable (4 models instead of 3). Off at every session start: it is pricey.
+  let withFable = false
   // Why the last prompt's Haiku triage gave no rating (undefined when it did or was skipped); logged with its first step.
   let triageNote: string | undefined
   // How many screenshots the last prompt carried; logged with its first step.
@@ -159,6 +161,11 @@ export const register: Register = on => {
       description: 'auto-model-effort: turn automatic model/effort selection on or off for this session',
       argumentHint: '[on|off]',
     })
+    await $.command.register({
+      name: 'with-fable',
+      description: 'auto-model-effort: let expert prompts use Fable (4 models instead of 3) for this session',
+      argumentHint: '[on|off]',
+    })
     notify($, statusNotice(enabled))
     return next(e)
   })
@@ -172,6 +179,16 @@ export const register: Register = on => {
     enabled = result.enabled
     show($, enabled && decision ? { decision } : null)
     notify($, statusNotice(enabled))
+    return { text: result.message }
+  })
+
+  on('command.run', { command: 'with-fable' }, async ($, e) => {
+    const result = withFableCommand(e.args, withFable)
+    withFable = result.enabled
+    // Turning Fable off also rewrites a standing Fable decision, which a turn without a typed prompt would reuse.
+    if (!withFable && decision) decision = withoutFable(decision, efforts)
+    show($, enabled && decision ? { decision } : null)
+    notify($, fableNotice(withFable))
     return { text: result.message }
   })
 
@@ -206,6 +223,7 @@ export const register: Register = on => {
         triageFailed,
         images: images.length,
         efforts,
+        fable: withFable,
       })
       show($, { decision })
     }
