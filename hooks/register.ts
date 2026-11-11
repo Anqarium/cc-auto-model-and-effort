@@ -134,21 +134,29 @@ function toggleDraftIgnored($: EngineInterface) {
   $.ui.invalidate('ui.render')
 }
 
-// The request line: "Fable 5.2 requested for this turn · alt+w to ignore", the hint a Button bound to alt+w.
+// A mod cannot bind its own keys: a Button's `action` names an engine keybinding action, and its chord presses the
+// Button only while no engine handler of that action is mounted. alt+w (chat:workflowKeywordToggle, ultracode's)
+// never reached it: that handler is always mounted (tried 2026-11-12). Under trial (v0.1.24): ctrl+x b
+// (app:cycleDiffBase, the types' own example; its handler is mounted only with the diff panel open) and ctrl+y
+// (chat:defaultToNewerModel; Claude Code's handler gives the key up while the prompt holds text).
+const IGNORE_KEYS = [
+  { key: 'ignore-model-keyword', label: 'ctrl+x b', action: 'app:cycleDiffBase' },
+  { key: 'ignore-model-keyword-y', label: 'ctrl+y', action: 'chat:defaultToNewerModel' },
+]
+
+// The request line: "Fable 5.2 requested for this turn · ctrl+x b / ctrl+y to ignore", each chord a Button.
 function requestLine($: EngineInterface, e: Parameters<EngineInterface['ui']['resolve']>[0], model: string) {
   const { Box, Text, Button } = $.ui.resolve(e)
+  const buttons = IGNORE_KEYS.flatMap((k, i) => [
+    ...(i ? [h(Text, { dimColor: true }, ' / ')] : []),
+    h(Button, { key: k.key, label: k.label, plain: true, dimColor: true, action: k.action, onPress: () => toggleDraftIgnored($) }),
+  ])
   return h(
     Box,
     { flexDirection: 'row' },
     h(Text, { dimColor: true }, `${requestNotice(model, draftIgnored)} · `),
-    h(Button, {
-      key: 'ignore-model-keyword',
-      label: draftIgnored ? 'alt+w to undo' : 'alt+w to ignore',
-      plain: true,
-      dimColor: true,
-      action: 'chat:workflowKeywordToggle',
-      onPress: () => toggleDraftIgnored($),
-    }),
+    ...buttons,
+    h(Text, { dimColor: true }, draftIgnored ? ' to undo' : ' to ignore'),
   )
 }
 
@@ -205,7 +213,7 @@ export const register: Register = on => {
     const right = h(Box, { paddingX: 1, flexDirection: 'column', alignItems: 'flex-end' }, ...rows)
     // Same row as the band beneath (token-weather's), ours at the far right. In a narrow window both would wrap into
     // a mess, so ours goes on its own rows above the band. The request line needs room for its own text.
-    const need = draftModel ? BAND_COLUMNS + requestNotice(draftModel, draftIgnored).length + 20 : SAME_ROW_COLUMNS
+    const need = draftModel ? BAND_COLUMNS + requestNotice(draftModel, draftIgnored).length + 32 : SAME_ROW_COLUMNS
     if (inner && e.props.bodyColumns >= need) {
       return h(Box, { flexDirection: 'row', justifyContent: 'space-between' }, inner, right)
     }
