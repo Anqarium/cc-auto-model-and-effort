@@ -106,27 +106,27 @@ test("a standing Fable decision is rewritten for Opus when Fable is turned off",
   assert.equal(withoutFable(sonnet), sonnet); // not a Fable decision: untouched
 });
 
-test("model keywords: whole words only, with positions; the most capable name wins", () => {
-  assert.deepEqual(modelKeywords("modeli Fable'a geçir"), [{ family: "fable", start: 7, end: 12 }]);
-  assert.equal(forcedModel("modeli fable yap haiku. Fable modelini deneyeceğiz"), MODELS.fable);
-  assert.equal(forcedModel("opus ile bak"), MODELS.opus);
-  assert.equal(forcedModel("use Sonnet."), MODELS.sonnet); // sentence end is fine
-  for (const t of ["claude-opus-5-5 id'si", "/with-fable on", "fable.md dosyası", "opuslar", "haikus", "~/fable/x", "no model here"]) {
+test("model keywords: only +name, with positions (the + included); the most capable name wins", () => {
+  assert.deepEqual(modelKeywords("modeli +Fable'a geçir"), [{ family: "fable", start: 7, end: 13 }]);
+  assert.equal(forcedModel("+fable yap, +haiku değil"), MODELS.fable);
+  assert.equal(forcedModel("+opus ile bak"), MODELS.opus);
+  assert.equal(forcedModel("use +Sonnet."), MODELS.sonnet); // sentence end is fine
+  // A plain name only mentions the model: nothing is forced.
+  for (const t of ["fable ile çöz", "Haiku yanlış cevap verdi", "claude-opus-5-5 id'si", "/with-fable on", "a+fable", "++fable", "+fable.md dosyası", "+opuslar", "no model here"]) {
     assert.equal(forcedModel(t), undefined, t);
   }
 });
 
-test("a typed model name forces it: no score, default effort, Fable even with /with-fable off; it carries on through go on", () => {
-  const d = decide("bunu fable ile çöz", { efforts: { fable: { base: "medium", up: "high" } } });
+test("a +name forces it: no score, default effort, Fable even with /with-fable off; it carries on through go on", () => {
+  const d = decide("bunu +fable ile çöz", { efforts: { fable: { base: "medium", up: "high" } } });
   assert.deepEqual([d.model, d.effort, d.level, d.score, d.reason, d.forced], [MODELS.fable, "medium", "forced", null, "keyword", true]);
-  const held = decide("bu fonksiyonu haiku ile yeniden adlandır", { previous: decide(EXPERT, { triage: 90 }), contextTokens: 50000 });
+  const held = decide("bu fonksiyonu +haiku ile yeniden adlandır", { previous: decide(EXPERT, { triage: 90 }), contextTokens: 50000 });
   assert.equal(held.model, MODELS.haiku); // no hysteresis for a named model
   const followup = decide("devam et", { previous: d });
   assert.deepEqual([followup.model, followup.reason], [MODELS.fable, "short-followup"]);
-  // alt+w on the draft: the name is ignored and the prompt is rated like any other.
-  const ignored = decide("bunu fable ile çöz", { keywords: false });
-  assert.notEqual(ignored.reason, "keyword");
-  assert.notEqual(ignored.model, MODELS.fable);
+  const plain = decide("bunu fable ile çöz"); // no +: rated like any prompt
+  assert.notEqual(plain.reason, "keyword");
+  assert.notEqual(plain.model, MODELS.fable);
   const next = decide("bu fonksiyonu yeniden adlandır", { previous: d, contextTokens: 50000 });
   assert.equal(next.model, MODELS.opus); // later prompts: Fable counts as Opus while /with-fable is off
 });

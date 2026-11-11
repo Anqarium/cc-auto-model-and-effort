@@ -7,7 +7,6 @@ test("a forced model: label without a score, the draft's request line, the log w
   assert.equal(label({ decision }), "🦊 Fable 5.2 · medium · forced");
   assert.equal(label({ decision: { ...decision, reason: "short-followup" } }), "🦊 Fable 5.2 · medium · forced · short-followup");
   assert.equal(requestNotice("claude-fable-5-2"), "Fable 5.2 requested for this turn");
-  assert.equal(requestNotice("claude-opus-5-5", true), "Opus 5.5 ignored for this turn");
   assert.equal(modelStyle("fable").color, "merged");
   assert.deepEqual(modelStyle("unknown"), {});
   const log = logSummary([{ t: "2026-11-12T10:00:00.000Z", step: 0, ...decision, responseModel: "claude-fable-5-2" }]);

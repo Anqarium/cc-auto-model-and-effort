@@ -24,7 +24,7 @@ describe('auto-model-effort', () => {
     expect(await ui.find({ text: /auto on/ })).toBeUndefined()
     await ui.unmount()
   })
-  test('a model name in the draft: a request line with ignore buttons above the prompt, beside other bands', async ($, on) => {
+  test('a +name in the draft: a request line above the prompt, beside other bands; a plain name draws none', async ($, on) => {
     mock.clock(on)
     on('session.start', ($, e) => ({ cwd: e.cwd }))
     on('command.register', ($, e) => ({ value: { command: e.name } }))
@@ -35,25 +35,18 @@ describe('auto-model-effort', () => {
       return h(Text, null, 'other band')
     })
     on('prompt.change', ($, e) => ({ text: e.text })) // stands in for core, which echoes the box
-    // The press reads the draft and repaints it at once; record what it paints.
-    const painted: unknown[] = []
-    on('prompt.read', () => ({ value: { text: 'fable ile çöz', cursor: 13 } }))
-    on('prompt.paint', ($, e) => (painted.push(e.decorations), { value: { isPainted: true, text: 'fable ile çöz', cursor: 13 } }))
     await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
-    await $.prompt.change({ text: 'fable ile çöz', cursor: 13, origin: { kind: 'history' } })
+    await $.prompt.change({ text: '+fable ile çöz', cursor: 14, origin: { kind: 'history' } })
     const props = { hasSurvey: false, isWorking: false, bodyColumns: 160 }
     const band = await $.ui.mount({ plugin: 'auto-model-effort', surface: 'terminal', component: 'AbovePrompt', props })
     expect(await band.find({ text: /Fable 5\.2 requested for this turn/ })).toBeDefined()
-    expect(await band.find({ text: /ctrl\+x b/ })).toBeDefined()
-    expect(await band.find({ text: / to ignore/ })).toBeDefined()
     expect(await band.find({ text: /other band/ })).toBeDefined()
-    await band.press({ key: 'ignore-model-keyword' }) // what ctrl+x b does
-    expect(await band.find({ text: /Fable 5\.2 ignored for this turn/ })).toBeDefined()
-    expect(await band.find({ text: / to undo/ })).toBeDefined()
-    expect(painted).toEqual([[]]) // ignored: the name's paint is cleared
-    await band.press({ key: 'ignore-model-keyword' }) // undo: painted again, Fable's purple
-    expect(painted[1]).toEqual([{ start: 0, end: 5, color: 'merged', bold: true }])
     await band.unmount()
+
+    await $.prompt.change({ text: 'fable ile çöz', cursor: 13, origin: { kind: 'history' } })
+    const plain = await $.ui.mount({ plugin: 'auto-model-effort', surface: 'terminal', component: 'AbovePrompt', props })
+    expect(await plain.find({ text: /requested for this turn/ })).toBeUndefined()
+    await plain.unmount()
   })
   test('desktop: the label goes into the AbovePrompt band, other bands are kept; terminal gets none', async ($, on) => {
     mock.clock(on)

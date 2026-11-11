@@ -115,55 +115,19 @@ function labelText($: EngineInterface, e: Parameters<EngineInterface['ui']['reso
   return !notice && lastingColor ? h(Text, { color: lastingColor, bold: lastingBold }, text) : h(Text, { dimColor: true }, text)
 }
 
-// While the draft names a model ("fable", "opus"...), a line above the prompt says that model will answer it;
-// alt+w (Claude Code's own ultracode "ignore" chord, `chat:workflowKeywordToggle`) toggles ignoring it for this prompt.
+// While the draft names a model with a `+` ("+fable", "+opus"...), a line above the prompt says that model will
+// answer it. The `+` replaced an ignore key (user's choice 2026-11-12): a plain name no longer triggers anything.
 let draftModel: string | undefined
-let draftIgnored = false
 
-// `edited`: the person typed (a keyword-free draft clears alt+w, so the next keyword starts un-ignored). A clear
-// (the submit takes the draft before turn.start) must keep it: turn.start reads it, then resets it.
-function setDraftModel($: EngineInterface, model: string | undefined, edited = false) {
-  if (edited && !model) draftIgnored = false
+function setDraftModel($: EngineInterface, model: string | undefined) {
   if (model === draftModel) return
   draftModel = model
   $.ui.invalidate('ui.render')
 }
 
-// Each model name in the draft, painted in its own model's color (lib/display.mjs modelStyle).
+// Each `+name` in the draft, painted in its own model's color (lib/display.mjs modelStyle).
 function keywordPaint(text: string) {
   return modelKeywords(text).map(w => ({ start: w.start, end: w.end, color: modelStyle(w.family).color ?? 'claude', bold: true }))
-}
-
-// The paint follows at once: a prompt.edit answer only repaints on the next keystroke, $.prompt.paint does it now.
-async function toggleDraftIgnored($: EngineInterface) {
-  draftIgnored = !draftIgnored
-  $.ui.invalidate('ui.render')
-  const { text } = await $.prompt.read()
-  await $.prompt.paint(draftIgnored ? { decorations: [] } : { text, decorations: keywordPaint(text) })
-}
-
-// A mod cannot bind its own keys: a Button's `action` names an engine keybinding action, and its chord presses the
-// Button only while no engine handler of that action is mounted. alt+w (chat:workflowKeywordToggle, ultracode's)
-// never reached it: that handler is always mounted; nor did ctrl+y (chat:defaultToNewerModel). ctrl+x b
-// (app:cycleDiffBase, the types' own example; its handler is mounted only with the diff panel open) works
-// (tried on screen 2026-11-12).
-// The request line: "Fable 5.2 requested for this turn · ctrl+x b to ignore", the chord a Button.
-function requestLine($: EngineInterface, e: Parameters<EngineInterface['ui']['resolve']>[0], model: string) {
-  const { Box, Text, Button } = $.ui.resolve(e)
-  return h(
-    Box,
-    { flexDirection: 'row' },
-    h(Text, { dimColor: true }, `${requestNotice(model, draftIgnored)} · `),
-    h(Button, {
-      key: 'ignore-model-keyword',
-      label: 'ctrl+x b',
-      plain: true,
-      dimColor: true,
-      action: 'app:cycleDiffBase',
-      onPress: () => toggleDraftIgnored($),
-    }),
-    h(Text, { dimColor: true }, draftIgnored ? ' to undo' : ' to ignore'),
-  )
 }
 
 function notify($: EngineInterface, text: string) {
@@ -210,29 +174,29 @@ export const register: Register = on => {
     if (e.props.hasSurvey) return inner
     const text = e.surface === 'desktop' ? (notice ?? lasting) : undefined
     if (!text && !draftModel) return inner
-    const { Box } = $.ui.resolve(e)
+    const { Box, Text } = $.ui.resolve(e)
     // Ours, right-aligned: the draft's model request (every surface, like ultracode's line) over the desktop label.
     const rows = [
-      ...(draftModel ? [requestLine($, e, draftModel)] : []),
+      ...(draftModel ? [h(Text, { dimColor: true }, requestNotice(draftModel))] : []),
       ...(text ? [labelText($, e, text)] : []),
     ]
     const right = h(Box, { paddingX: 1, flexDirection: 'column', alignItems: 'flex-end' }, ...rows)
     // Same row as the band beneath (token-weather's), ours at the far right. In a narrow window both would wrap into
     // a mess, so ours goes on its own rows above the band. The request line needs room for its own text.
-    const need = draftModel ? BAND_COLUMNS + requestNotice(draftModel, draftIgnored).length + 22 : SAME_ROW_COLUMNS
+    const need = draftModel ? BAND_COLUMNS + requestNotice(draftModel).length + 4 : SAME_ROW_COLUMNS
     if (inner && e.props.bodyColumns >= need) {
       return h(Box, { flexDirection: 'row', justifyContent: 'space-between' }, inner, right)
     }
     return h(Box, { flexDirection: 'column' }, h(Box, { justifyContent: 'flex-end' }, right), inner)
   })
 
-  // A model name in the draft: painted in the box and announced above it; the decision is made at turn.start.
+  // A `+name` in the draft: painted in the box and announced above it; the decision is made at turn.start.
   on('prompt.edit', async ($, e, next) => {
     const r = await next(e)
     const words = enabled ? modelKeywords(r.text) : []
     const forced = words.length ? forcedModel(r.text) : undefined
-    setDraftModel($, forced ? (ids[forced] ?? forced) : undefined, true)
-    if (!words.length || draftIgnored) return r
+    setDraftModel($, forced ? (ids[forced] ?? forced) : undefined)
+    if (!words.length) return r
     return { ...r, decorations: [...(r.decorations ?? []), ...keywordPaint(r.text)] }
   })
 
@@ -289,11 +253,7 @@ export const register: Register = on => {
   on('turn.start', async ($, e, next) => {
     // Empty text is a turn without a typed prompt (a background agent's notification, a continuation):
     // the previous decision stands.
-    const keywords = !draftIgnored // alt+w on the draft: its model name is ignored for this prompt
-    if (e.text.trim()) {
-      draftIgnored = false
-      setDraftModel($, undefined)
-    }
+    if (e.text.trim()) setDraftModel($, undefined)
     if (enabled && e.text.trim()) {
       const learned = await learnFromCatalog($, ids)
       ids = learned.ids
@@ -307,8 +267,8 @@ export const register: Register = on => {
       let triage: number | undefined
       let triageFailed = false
       triageNote = undefined
-      // A typed model name decides on its own (lib/select.mjs forcedModel), so Haiku is not asked.
-      if (!(keywords && forcedModel(e.text)) && !(decision && e.text.trim().length < SHORT_PROMPT && !images.length)) {
+      // A `+name` decides on its own (lib/select.mjs forcedModel), so Haiku is not asked.
+      if (!forcedModel(e.text) && !(decision && e.text.trim().length < SHORT_PROMPT && !images.length)) {
         const r = await triageCall($, e.text, images, ids.haiku ?? SEED_IDS.haiku)
         triage = r.score
         triageFailed = triage === undefined
@@ -324,7 +284,6 @@ export const register: Register = on => {
         images: images.length,
         efforts,
         fable: withFable,
-        keywords,
       })
       show($, { decision })
     }
