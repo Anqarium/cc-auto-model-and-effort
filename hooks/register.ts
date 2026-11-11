@@ -94,19 +94,22 @@ async function record($: EngineInterface, entry: Record<string, unknown>) {
 let lasting: string | undefined
 // Color of the lasting label (Fable, Opus); none for the dim default.
 let lastingColor: string | undefined
+let lastingBold = false
 let notice: string | undefined
 let noticeTimer: Timer | undefined
 
 function show($: EngineInterface, d: Parameters<typeof label>[0]) {
   lasting = label(d)
-  lastingColor = labelStyle(d).color
+  const style = labelStyle(d)
+  lastingColor = style.color
+  lastingBold = !!style.bold
   $.ui.invalidate('ui.render')
 }
 
-// The label as drawn: colored and bold for a styled model, dim otherwise (the notice is always dim).
+// The label as drawn: in the model's color (bold for Opus and Fable), dim otherwise (the notice is always dim).
 function labelText($: EngineInterface, e: Parameters<EngineInterface['ui']['resolve']>[0], text: string) {
   const { Text } = $.ui.resolve(e)
-  return !notice && lastingColor ? h(Text, { color: lastingColor, bold: true }, text) : h(Text, { dimColor: true }, text)
+  return !notice && lastingColor ? h(Text, { color: lastingColor, bold: lastingBold }, text) : h(Text, { dimColor: true }, text)
 }
 
 // While the draft names a model ("fable", "opus"...), a line above the prompt says that model will answer it.
