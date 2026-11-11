@@ -4,7 +4,7 @@
 import type { EngineInterface, Register, Timer } from 'claude-code'
 import { MODELS, SEED_IDS, decide, effortToSend, forcedModel, learnModel, modelKeywords, withoutFable } from '../lib/select.mjs'
 import { effortsFromCatalog, idsFromCatalog } from '../lib/catalog.mjs'
-import { autoCommand, fableNotice, label, logSummary, requestNotice, statusNotice, withFableCommand } from '../lib/display.mjs'
+import { autoCommand, fableNotice, label, labelStyle, logSummary, requestNotice, statusNotice, withFableCommand } from '../lib/display.mjs'
 import { TRIAGE_HEADERS, TRIAGE_URL, parseTriageResponse, promptImages, triageBody } from '../lib/triage.mjs'
 
 // Above this many conversation tokens the model is not downgraded (the new model would rewrite the cache).
@@ -92,12 +92,21 @@ async function record($: EngineInterface, entry: Record<string, unknown>) {
 // its place for a few seconds. When either changes, ui.render runs again.
 // $ may only be passed to functions declared at the top level of this file (validator rule), hence these here.
 let lasting: string | undefined
+// Color of the lasting label (Fable, Opus); none for the dim default.
+let lastingColor: string | undefined
 let notice: string | undefined
 let noticeTimer: Timer | undefined
 
 function show($: EngineInterface, d: Parameters<typeof label>[0]) {
   lasting = label(d)
+  lastingColor = labelStyle(d).color
   $.ui.invalidate('ui.render')
+}
+
+// The label as drawn: colored and bold for a styled model, dim otherwise (the notice is always dim).
+function labelText($: EngineInterface, e: Parameters<EngineInterface['ui']['resolve']>[0], text: string) {
+  const { Text } = $.ui.resolve(e)
+  return !notice && lastingColor ? h(Text, { color: lastingColor, bold: true }, text) : h(Text, { dimColor: true }, text)
 }
 
 // While the draft names a model ("fable", "opus"...), a line above the prompt says that model will answer it.
@@ -134,9 +143,15 @@ export const register: Register = on => {
   // How many screenshots the last prompt carried; logged with its first step.
   let imageCount = 0
 
-  on('ui.render', { component: 'SessionMode' }, ($, e, next) => {
+  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
     const text = notice ?? lasting
-    return text ? next({ ...e, props: { ...e.props, modes: [...e.props.modes, text] } }) : next(e)
+    if (!text) return next(e)
+    // A plain label joins the engine's dim modes; a styled one (Fable, Opus) is drawn by us, after the other modes.
+    if (notice || !lastingColor) return next({ ...e, props: { ...e.props, modes: [...e.props.modes, text] } })
+    const mine = labelText($, e, text)
+    if (!e.props.modes.length) return mine
+    const { Box, Text } = $.ui.resolve(e)
+    return h(Box, { flexDirection: 'row' }, await next(e), h(Text, { dimColor: true }, ' & '), mine)
   })
 
   // The desktop does not draw SessionMode, so there the same text goes into the AbovePrompt band (raised on the terminal
@@ -148,17 +163,17 @@ export const register: Register = on => {
     const text = e.surface === 'desktop' ? (notice ?? lasting) : undefined
     if (!text && !draftRequest) return inner
     const { Box, Text } = $.ui.resolve(e)
-    const ownRow = (t: string) => h(Box, { paddingX: 1, justifyContent: 'flex-end' }, h(Text, { dimColor: true }, t))
+    const ownRow = (t: ReturnType<typeof h>) => h(Box, { paddingX: 1, justifyContent: 'flex-end' }, t)
     let body = inner
     if (text) {
       // Same row as the band beneath (token-weather's), ours at the far right; alone it is right-aligned. In a narrow
       // window both would wrap into a mess, so the label goes on its own row, right-aligned, above the band.
       body = inner && e.props.bodyColumns >= SAME_ROW_COLUMNS
-        ? h(Box, { flexDirection: 'row', justifyContent: 'space-between' }, inner, h(Box, { paddingX: 1 }, h(Text, { dimColor: true }, text)))
-        : h(Box, { flexDirection: 'column' }, ownRow(text), inner)
+        ? h(Box, { flexDirection: 'row', justifyContent: 'space-between' }, inner, h(Box, { paddingX: 1 }, labelText($, e, text)))
+        : h(Box, { flexDirection: 'column' }, ownRow(labelText($, e, text)), inner)
     }
     // The draft's model request goes on top, right-aligned, on every surface (like ultracode's line).
-    return draftRequest ? h(Box, { flexDirection: 'column' }, ownRow(draftRequest), body) : body
+    return draftRequest ? h(Box, { flexDirection: 'column' }, ownRow(h(Text, { dimColor: true }, draftRequest)), body) : body
   })
 
   // A model name in the draft: painted in the box and announced above it; the decision is made at turn.start.
