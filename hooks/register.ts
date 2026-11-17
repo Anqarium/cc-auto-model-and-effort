@@ -1,7 +1,7 @@
 // Claude Code mod: scores every user prompt and sends the main conversation's model requests (turn.step)
 // with the chosen model + effort. The decision logic and the display text live in pure modules under lib/
 // (lib/select.mjs, lib/display.mjs), kept out of the mod code so they can be tested with Node.
-import type { EngineInterface, Register, Timer } from 'claude-code'
+import type { EngineInterface, Register, RenderElement, Timer } from 'claude-code'
 import { MODELS, SEED_IDS, decide, effortToSend, forcedModel, learnModel, modelKeywords, withoutFable } from '../lib/select.mjs'
 import { effortsFromCatalog, idsFromCatalog } from '../lib/catalog.mjs'
 import { autoCommand, fableNotice, label, labelStyle, logSummary, modelStyle, requestNotice, statusNotice, withFableCommand } from '../lib/display.mjs'
@@ -110,9 +110,15 @@ function show($: EngineInterface, d: Parameters<typeof label>[0]) {
 }
 
 // The label as drawn: in the model's color (bold for Opus and Fable), dim otherwise (the notice is always dim).
-function labelText($: EngineInterface, e: Parameters<EngineInterface['ui']['resolve']>[0], text: string) {
+// The JSX factory `h` is typed as returning a RenderNode (it may yield a plain string or nothing), but a `ui.render`
+// hook must return a RenderElement. Every element built here is one, so this narrows the type.
+function el(...args: Parameters<typeof h>): RenderElement {
+  return h(...args) as RenderElement
+}
+
+function labelText($: EngineInterface, e: Parameters<EngineInterface['ui']['resolve']>[0], text: string): RenderElement {
   const { Text } = $.ui.resolve(e)
-  return !notice && lastingColor ? h(Text, { color: lastingColor, bold: lastingBold }, text) : h(Text, { dimColor: true }, text)
+  return !notice && lastingColor ? el(Text, { color: lastingColor, bold: lastingBold }, text) : el(Text, { dimColor: true }, text)
 }
 
 // While the draft names a model with a `+` ("+fable", "+opus"...), a line above the prompt says that model will
@@ -163,7 +169,7 @@ export const register: Register = on => {
     const mine = labelText($, e, text)
     if (!e.props.modes.length) return mine
     const { Box, Text } = $.ui.resolve(e)
-    return h(Box, { flexDirection: 'row' }, await next(e), h(Text, { dimColor: true }, ' & '), mine)
+    return el(Box, { flexDirection: 'row' }, await next(e), el(Text, { dimColor: true }, ' & '), mine)
   })
 
   // The desktop does not draw SessionMode, so there the same text goes into the AbovePrompt band (raised on the terminal
@@ -177,17 +183,17 @@ export const register: Register = on => {
     const { Box, Text } = $.ui.resolve(e)
     // Ours, right-aligned: the draft's model request (every surface, like ultracode's line) over the desktop label.
     const rows = [
-      ...(draftModel ? [h(Text, { dimColor: true }, requestNotice(draftModel))] : []),
+      ...(draftModel ? [el(Text, { dimColor: true }, requestNotice(draftModel))] : []),
       ...(text ? [labelText($, e, text)] : []),
     ]
-    const right = h(Box, { paddingX: 1, flexDirection: 'column', alignItems: 'flex-end' }, ...rows)
+    const right = el(Box, { paddingX: 1, flexDirection: 'column', alignItems: 'flex-end' }, ...rows)
     // Same row as the band beneath (token-weather's), ours at the far right. In a narrow window both would wrap into
     // a mess, so ours goes on its own rows above the band. The request line needs room for its own text.
     const need = draftModel ? BAND_COLUMNS + requestNotice(draftModel).length + 4 : SAME_ROW_COLUMNS
     if (inner && e.props.bodyColumns >= need) {
-      return h(Box, { flexDirection: 'row', justifyContent: 'space-between' }, inner, right)
+      return el(Box, { flexDirection: 'row', justifyContent: 'space-between' }, inner, right)
     }
-    return h(Box, { flexDirection: 'column' }, h(Box, { justifyContent: 'flex-end' }, right), inner)
+    return el(Box, { flexDirection: 'column' }, el(Box, { justifyContent: 'flex-end' }, right), inner)
   })
 
   // A `+name` in the draft: painted in the box and announced above it; the decision is made at turn.start.
