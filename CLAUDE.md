@@ -81,7 +81,6 @@ The mod runs in an environment without Node (no DOM, no `node:` modules) and can
 ## Risks and unverified
 
 - The fallback path has not been triggered by a real API rejection.
-- Fable's own usage limit (seen 2026-11-19 with `+fable`: "You're out of usage credits") arrives as ordinary assistant text, so the `rejected` fallback does not run and the prompt ends in an error. With `/with-fable` on, an `expert` prompt that hits the limit would fail instead of falling back to Opus. Not seen in automatic routing yet; if it happens, the fallback needs a way to recognize that reply (open idea, not started).
 - Haiku triage over raw `/v1/messages` depends on Claude Code internals (the identity line, the credential handle); if a release changes them every prompt quietly takes `rules-fallback`, and `triageNote` shows why. Screenshot triage verified once end to end (`claude -p --plugin-dir .` with a stream-json image prompt → `simple (8) · 1 image`, reason `score`).
 - Haiku triage: verified once with `claude -p` ("mimari nedir?" → Haiku 2, trivial); the rating scale in `TRIAGE_SYSTEM` is not calibrated on real use, and the rules-fallback path fired in real use (2026-10-11, three Opus decisions at score 77; cause unknown, `triageNote` now records it); `unparseable` was seen once (2026-10-13) and addressed in v0.1.4 with the task tags, so watch `/auto-log`.
 - The scorer is rule-based and not yet calibrated on real use. "tasarım" (design) also counts as heavy for UI work.
