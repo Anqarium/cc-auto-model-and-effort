@@ -50,8 +50,11 @@ test("without a rating, a prompt with a screenshot gets the image floor and is n
   const d = decide("bu ne?", { previous, triageFailed: true, images: 1 });
   assert.deepEqual([d.score, d.model, d.reason, d.signals.includes("image")], [IMAGE_FLOOR, MODELS.sonnet, "rules-fallback", true]);
   assert.equal(decide("rename it", { triageFailed: true, images: 1 }).model, MODELS.sonnet, "no cheap route on an easy marker");
-  // Haiku's rating, having seen the screenshot, still wins.
-  assert.equal(decide("bu ne?", { triage: 3, images: 1 }).model, MODELS.haiku);
+  // Haiku's rating still sets the score and level, but a screenshot never goes to Haiku: vision-heavy work belongs on a
+  // stronger model (claude.dev model guide), so a trivial rating with a screenshot stays on Sonnet.
+  const rated = decide("bu ne?", { triage: 3, images: 1 });
+  assert.deepEqual([rated.model, rated.score, rated.level], [MODELS.sonnet, 3, "trivial"]);
+  assert.equal(decide("bu ne?", { triage: 3 }).model, MODELS.haiku, "no screenshot: the cheap route stays");
 });
 
 test("decide routes by Haiku's rating, not the rules", () => {
