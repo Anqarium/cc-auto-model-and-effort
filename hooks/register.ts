@@ -191,8 +191,6 @@ export const register: Register = on => {
     if (text && !notice && columns < FULL_LABEL_COLUMNS) text = compactLabel(text)
     const need = SAME_ROW_COLUMNS + (draftModel ? requestNotice(draftModel).length + 4 : 0)
     const sameRow = !!inner && columns >= need
-    // TEMP diagnostic (v0.1.39): what the desktop really hands this hook. Remove once the band layout is confirmed.
-    if (text) text += ` · dbg ${sameRow ? (draftModel ? 'row' : 'abs') : 'col'} inner=${inner ? 'yes' : 'no'} body=${String(e.props.bodyColumns)} vp=${String(e.viewport?.columns)}`
     // Ours, right-aligned: the draft's model request (every surface, like ultracode's line) over the desktop label.
     const rows = [
       ...(draftModel ? [el(Text, { dimColor: true }, requestNotice(draftModel))] : []),
