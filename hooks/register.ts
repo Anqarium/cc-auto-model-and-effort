@@ -184,7 +184,10 @@ export const register: Register = on => {
     if (!text && !draftModel) return inner
     const { Box, Text } = $.ui.resolve(e)
     // A narrow band gets the shorter label (no effort part); a notice keeps its text, it says what to type.
-    const columns = e.props.bodyColumns
+    // The width may be missing on the desktop (the types: "absent where no surface has measured"; the label sat on its own
+    // row at full length, which only a non-number width explains): fall back to the viewport's, else assume it is wide.
+    const measured = e.props.bodyColumns ?? e.viewport?.columns
+    const columns = typeof measured === 'number' && Number.isFinite(measured) ? measured : Infinity
     if (text && !notice && columns < FULL_LABEL_COLUMNS) text = compactLabel(text)
     // Ours, right-aligned: the draft's model request (every surface, like ultracode's line) over the desktop label.
     const rows = [
