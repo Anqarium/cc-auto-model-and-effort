@@ -189,21 +189,26 @@ export const register: Register = on => {
     const measured = e.props.bodyColumns ?? e.viewport?.columns
     const columns = typeof measured === 'number' && Number.isFinite(measured) ? measured : Infinity
     if (text && !notice && columns < FULL_LABEL_COLUMNS) text = compactLabel(text)
-    // TEMP diagnostic (v0.1.38): what the desktop really hands this hook. Remove once the band layout is fixed.
-    if (text) text += ` · dbg inner=${inner ? 'yes' : 'no'} body=${String(e.props.bodyColumns)} vp=${String(e.viewport?.columns)}`
+    const need = SAME_ROW_COLUMNS + (draftModel ? requestNotice(draftModel).length + 4 : 0)
+    const sameRow = !!inner && columns >= need
+    // TEMP diagnostic (v0.1.39): what the desktop really hands this hook. Remove once the band layout is confirmed.
+    if (text) text += ` · dbg ${sameRow ? (draftModel ? 'row' : 'abs') : 'col'} inner=${inner ? 'yes' : 'no'} body=${String(e.props.bodyColumns)} vp=${String(e.viewport?.columns)}`
     // Ours, right-aligned: the draft's model request (every surface, like ultracode's line) over the desktop label.
     const rows = [
       ...(draftModel ? [el(Text, { dimColor: true }, requestNotice(draftModel))] : []),
       ...(text ? [labelText($, e, text)] : []),
     ]
     const right = el(Box, { paddingX: 1, flexDirection: 'column', alignItems: 'flex-end' }, ...rows)
-    // Same row as the band beneath (token-weather's), ours at the far right (the band shrinks for it; wrapping the row
-    // instead, v0.1.35, sent ours under the band every time because the band fills the width). Only in a very narrow
-    // window, or for the draft's longer request line without room, ours goes on its own row above the band.
-    const need = SAME_ROW_COLUMNS + (draftModel ? requestNotice(draftModel).length + 4 : 0)
-    if (inner && columns >= need) {
-      return el(Box, { flexDirection: 'row', justifyContent: 'space-between' }, inner, right)
+    // The label alone goes OVER the band's row at its far right (position absolute): token-weather's band fills the
+    // width, so a flex row or wrap put the label on a row of its own on the desktop (v0.1.35-0.1.38 screenshots, with the
+    // band handed in and 99 columns measured). A tree wider than the band is no problem there: the band hides its
+    // sparkline and trend itself below 66 and 88 columns.
+    if (sameRow && !draftModel) {
+      // No `position` on the Box that holds the band: the validator refuses an engine node under a positioned Box.
+      return el(Box, { flexDirection: 'column' }, inner, el(Box, { position: 'absolute', top: 0, right: 0 }, right))
     }
+    // With the draft's request line (several rows) the old flex row, when it fits; else its own rows above the band.
+    if (sameRow) return el(Box, { flexDirection: 'row', justifyContent: 'space-between' }, inner, right)
     return el(Box, { flexDirection: 'column' }, el(Box, { justifyContent: 'flex-end' }, right), inner)
   })
 
