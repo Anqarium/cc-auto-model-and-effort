@@ -4,7 +4,7 @@
 import type { EngineInterface, Register, RenderElement, Timer, TurnStepChunk } from 'claude-code'
 import { MODELS, SEED_IDS, decide, effortToSend, forcedModel, learnModel, modelKeywords, withoutFable } from '../lib/select.mjs'
 import { effortsFromCatalog, idsFromCatalog } from '../lib/catalog.mjs'
-import { autoCommand, compactLabel, fableNotice, fallbackNotice, label, labelStyle, logSummary, modelStyle, requestNotice, statusNotice, withFableCommand } from '../lib/display.mjs'
+import { autoCommand, fableNotice, fallbackNotice, label, labelStyle, logSummary, modelStyle, requestNotice, statusNotice, withFableCommand } from '../lib/display.mjs'
 import { TRIAGE_HEADERS, TRIAGE_URL, parseTriageResponse, promptImages, triageBody } from '../lib/triage.mjs'
 
 // Above this many conversation tokens the model is not downgraded (the new model would rewrite the cache).
@@ -18,12 +18,9 @@ const LOG_MAX = 2000
 const NOTICE_MS = 4000
 // The Fable → Opus fallback notice stays a little longer: the user may want to press Esc or run /with-fable off.
 const FALLBACK_NOTICE_MS = 8000
-// Desktop band widths (`bodyColumns`; the proportional font makes a column narrower than a character). Measured
-// 2026-11-10: a ~770 px band reports 98-99 columns, a ~575 px one 74, and token-weather's band takes about 60 of them.
-// Below FULL_LABEL_COLUMNS the label is shortened (compactLabel); below SAME_ROW_COLUMNS (plus the request line's own
-// length when the draft names a model) it gets its own row above the band instead of sharing token-weather's.
-const FULL_LABEL_COLUMNS = 80
-const SAME_ROW_COLUMNS = 60
+// The mode label and token-weather's readings are shared through $.state (contract in types/index.d.ts).
+const modeLabel = { plugin: 'auto-model-effort', key: 'label' } as const
+const weatherReadings = { plugin: 'token-weather', key: 'readings' } as const
 
 type Decision = ReturnType<typeof decide>
 type ModelIds = Record<string, string>
@@ -101,11 +98,20 @@ let lastingBold = false
 let notice: string | undefined
 let noticeTimer: Timer | undefined
 
+// The label as token-weather draws it on the desktop: published to $.state whenever the label or a notice changes
+// (the state may not be written while a ui.render hook draws, so this runs from the events that change it).
+function publishLabel($: EngineInterface) {
+  const text = notice ?? lasting
+  const value = text ? { text, ...(!notice && lastingColor ? { color: lastingColor, bold: lastingBold } : {}) } : null
+  $.state.set(modeLabel, value).catch(err => $.ui.log(`auto-model-effort: the label state was not written: ${String(err)}`))
+}
+
 function show($: EngineInterface, d: Parameters<typeof label>[0]) {
   lasting = label(d)
   const style = labelStyle(d)
   lastingColor = style.color
   lastingBold = !!style.bold
+  publishLabel($)
   $.ui.invalidate('ui.render')
 }
 
@@ -141,8 +147,10 @@ function notify($: EngineInterface, text: string, ms: number = NOTICE_MS) {
   notice = text
   noticeTimer = $.clock.after(ms, () => {
     notice = undefined
+    publishLabel($)
     $.ui.invalidate('ui.render')
   })
+  publishLabel($)
   $.ui.invalidate('ui.render')
 }
 
@@ -163,7 +171,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
     const text = notice ?? lasting
-    // The desktop draws the label at the left of the footer (PromptHint below), not here at the right.
+    // The desktop draws the label inside token-weather's band (or above the band below), not here at the right.
     if (!text || e.surface === 'desktop') return next(e)
     // A plain label joins the engine's dim modes; a styled one (Fable, Opus) is drawn by us, after the other modes.
     if (notice || !lastingColor) return next({ ...e, props: { ...e.props, modes: [...e.props.modes, text] } })
@@ -173,38 +181,27 @@ export const register: Register = on => {
     return el(Box, { flexDirection: 'row' }, await next(e), el(Text, { dimColor: true }, ' & '), mine)
   })
 
-  // The desktop draws SessionMode too, but the label there was cut off and doubled the band's copy, so on the desktop it
-  // goes only into the AbovePrompt band (PromptHint, at the left of the footer, was tried in v0.1.34: the desktop does not
-  // draw it). The render event's own surface is used because session.start reports null for the desktop's SDK-style
-  // process. The terminal keeps SessionMode. Other bands (token-weather) are kept.
+  // Above the prompt (terminal and desktop): the draft's model request, like ultracode's line, and on the desktop the mode
+  // label when token-weather is not drawing it. The band beneath is an opaque engine node (type `engine`, no props or
+  // children; a v0.1.44-0.1.45 diagnostic showed it): nothing can be added to its row, and every flex or absolute layout
+  // beside it drew the label on a row of its own or half a row off (v0.1.35-0.1.46). So with token-weather running, IT
+  // draws the label inside its own row, from the label state published above, and this hook draws none; without it the
+  // label goes right-aligned on a row above whatever band there is. The render event's own surface is used because
+  // session.start reports null for the desktop's SDK-style process. The terminal keeps the SessionMode label.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const inner = await next(e)
     if (e.props.hasSurvey) return inner
-    let text = e.surface === 'desktop' ? (notice ?? lasting) : undefined
+    const { value: weather } = await $.state.get(weatherReadings)
+    const weatherDraws = Array.isArray(weather) && weather.length > 0
+    const text = e.surface === 'desktop' && !weatherDraws ? (notice ?? lasting) : undefined
     if (!text && !draftModel) return inner
     const { Box, Text } = $.ui.resolve(e)
-    // A narrow band gets the shorter label (no effort part); a notice keeps its text, it says what to type.
-    // The width may be missing on the desktop (the types: "absent where no surface has measured"; the label sat on its own
-    // row at full length, which only a non-number width explains): fall back to the viewport's, else assume it is wide.
-    const measured = e.props.bodyColumns ?? e.viewport?.columns
-    const columns = typeof measured === 'number' && Number.isFinite(measured) ? measured : Infinity
-    if (text && !notice && columns < FULL_LABEL_COLUMNS) text = compactLabel(text)
-    const need = SAME_ROW_COLUMNS + (draftModel ? requestNotice(draftModel).length + 4 : 0)
-    const sameRow = !!inner && columns >= need
     // Ours, right-aligned: the draft's model request (every surface, like ultracode's line) over the desktop label.
     const rows = [
       ...(draftModel ? [el(Text, { dimColor: true }, requestNotice(draftModel))] : []),
       ...(text ? [labelText($, e, text)] : []),
     ]
     const right = el(Box, { paddingX: 1, flexDirection: 'column', alignItems: 'flex-end' }, ...rows)
-    // The band beneath is an opaque engine node (type `engine`, no props or children; a v0.1.44-0.1.45 diagnostic showed
-    // it), so the label cannot be added to its row, and every flex layout beside it (row, wrapped, nowrap, v0.1.36-0.1.43)
-    // drew the label on a row above it. So the label is positioned over the band's row instead, anchored to the bottom of
-    // the box that holds the band: the band's text is the lowest row there (the grey box has a spare row above it that
-    // top and centre anchoring, v0.1.39-0.1.41, landed in). `position` must not sit on the Box that holds the engine node.
-    if (sameRow) {
-      return el(Box, { flexDirection: 'column' }, inner, el(Box, { position: 'absolute', bottom: 0, right: 0 }, right))
-    }
     return el(Box, { flexDirection: 'column' }, el(Box, { justifyContent: 'flex-end' }, right), inner)
   })
 
