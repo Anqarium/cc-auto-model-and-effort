@@ -75,4 +75,17 @@ describe('auto-model-effort', () => {
     expect(await terminalBand.find({ text: /auto on/ })).toBeUndefined()
     await terminalBand.unmount()
   })
+  test('a placed row of an unknown id draws nothing on any surface (the mobile label rows come from session.measure)', async ($, on) => {
+    mock.clock(on)
+    on('session.start', ($, e) => ({ cwd: e.cwd }))
+    on('command.register', ($, e) => ({ value: { command: e.name } }))
+    on('ui.status', () => ({ value: undefined }))
+    on('store.get', () => ({ value: undefined }))
+    await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
+    for (const surface of ['terminal', 'desktop', 'mobile'] as const) {
+      const row = await $.ui.mount({ plugin: 'auto-model-effort', surface, component: 'Placed', props: { id: 'mode-1', plugin: 'auto-model-effort' } })
+      expect(await row.find({ text: /./ })).toBeUndefined()
+      await row.unmount()
+    }
+  })
 })

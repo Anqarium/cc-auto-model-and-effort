@@ -20,6 +20,8 @@ const NOTICE_MS = 4000
 const FALLBACK_NOTICE_MS = 8000
 // The mode label and token-weather's readings are shared through $.state (contract in types/index.d.ts).
 const modeLabel = { plugin: 'auto-model-effort', key: 'label' } as const
+// modeLabel may only be used as a $.state reference (validator rule), so the plugin's own name is repeated for Placed rows.
+const PLUGIN_NAME = 'auto-model-effort'
 const weatherReadings = { plugin: 'token-weather', key: 'readings' } as const
 
 type Decision = ReturnType<typeof decide>
@@ -104,6 +106,31 @@ function publishLabel($: EngineInterface) {
   const text = notice ?? lasting
   const value = text ? { text, ...(!notice && lastingColor ? { color: lastingColor, bold: lastingBold } : {}) } : null
   $.state.set(modeLabel, value).catch(err => $.ui.log(`auto-model-effort: the label state was not written: ${String(err)}`))
+}
+
+// The mobile app draws neither SessionMode nor AbovePrompt (types: "Raised on the terminal and desktop surfaces
+// only"), so there the label goes into the transcript: one placed row after each turn (`$.ui.place`, drawn by the
+// `Placed` hook below). Every row keeps the label as it was when the turn ended, so history is not relabelled.
+// Display only: the row is not in the model's context and `--resume` does not bring it back.
+type PlacedRow = { text: string; color?: string; bold: boolean }
+const PLACED_MAX = 200
+const placedRows = new Map<string, PlacedRow>()
+let placedCount = 0
+// True once a model step has run since the last row, so a measurement that only moved a rate-limit window adds none.
+let rowPending = false
+
+async function placeRow($: EngineInterface) {
+  if (!rowPending || !lasting) return
+  rowPending = false
+  try {
+    if (!(await $.session.surfaces()).includes('mobile')) return
+    const id = `mode-${++placedCount}`
+    placedRows.set(id, { text: lasting, color: lastingColor, bold: lastingBold })
+    if (placedRows.size > PLACED_MAX) placedRows.delete(placedRows.keys().next().value as string)
+    await $.ui.place({ id })
+  } catch (error) {
+    $.ui.log(`auto-model-effort: the mobile label row was not placed: ${String(error)}`)
+  }
 }
 
 function show($: EngineInterface, d: Parameters<typeof label>[0]) {
@@ -203,6 +230,21 @@ export const register: Register = on => {
     ]
     const right = el(Box, { paddingX: 1, flexDirection: 'column', alignItems: 'flex-end' }, ...rows)
     return el(Box, { flexDirection: 'column' }, el(Box, { justifyContent: 'flex-end' }, right), inner)
+  })
+
+  // The mobile app: the turn's label as a row at the transcript's end (placed by session.measure below). Other surfaces
+  // already have the label elsewhere, so a row seen there draws nothing.
+  on('ui.render', { component: 'Placed' }, async ($, e, next) => {
+    const row = e.props.plugin === PLUGIN_NAME && e.surface === 'mobile' ? placedRows.get(e.props.id) : undefined
+    if (!row) return next(e)
+    const { Text } = $.ui.resolve(e)
+    return row.color ? el(Text, { color: row.color, bold: row.bold }, row.text) : el(Text, { dimColor: true }, row.text)
+  })
+
+  // Fires after each main-thread turn (and when a rate-limit window moves): place the turn's row for a mobile app.
+  on('session.measure', async ($, e, next) => {
+    await placeRow($)
+    return next(e)
   })
 
   // A `+name` in the draft: painted in the box and announced above it; the decision is made at turn.start.
@@ -363,6 +405,7 @@ export const register: Register = on => {
     const u = result.usage
     ids = await remember($, ids, u?.model)
     show($, { decision, responseModel: u?.model, sentEffort: fallback ? undefined : effort })
+    rowPending = true
     await record($, {
       step: e.index,
       model: logged.model,
