@@ -18,13 +18,9 @@ const LOG_MAX = 2000
 const NOTICE_MS = 4000
 // The Fable → Opus fallback notice stays a little longer: the user may want to press Esc or run /with-fable off.
 const FALLBACK_NOTICE_MS = 8000
-// Band width (columns) from which the desktop label shares token-weather's row; below it it gets its own row.
-// Measured on the desktop (2026-11-10, recorded `bodyColumns`): a ~770 px band reports 98-99 columns and fits both on
-// one row with room to spare, a ~575 px band reports 74 and does not. The desktop's proportional font makes a column
-// narrower than a character, so counting characters overestimates (125 and 100 both pushed the label up needlessly).
-const SAME_ROW_COLUMNS = 90
-// Columns token-weather's band takes, measured the same way (90 less a ~30-column label); the draft's request line is
-// longer than the label, so it shares the row only from BAND_COLUMNS + its own length.
+// Columns token-weather's band takes, measured on the desktop (2026-11-10, recorded `bodyColumns`: a ~770 px band
+// reports 98-99 columns, a ~575 px one 74; the proportional font makes a column narrower than a character). The draft's
+// request line shares the band's row only from BAND_COLUMNS + its own length, else it gets its own row above.
 const BAND_COLUMNS = 60
 
 type Decision = ReturnType<typeof decide>
@@ -165,7 +161,8 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
     const text = notice ?? lasting
-    if (!text) return next(e)
+    // The desktop draws the label at the left of the footer (PromptHint below), not here at the right.
+    if (!text || e.surface === 'desktop') return next(e)
     // A plain label joins the engine's dim modes; a styled one (Fable, Opus) is drawn by us, after the other modes.
     if (notice || !lastingColor) return next({ ...e, props: { ...e.props, modes: [...e.props.modes, text] } })
     const mine = labelText($, e, text)
@@ -174,24 +171,27 @@ export const register: Register = on => {
     return el(Box, { flexDirection: 'row' }, await next(e), el(Text, { dimColor: true }, ' & '), mine)
   })
 
-  // The desktop does not draw SessionMode, so there the same text goes into the AbovePrompt band (raised on the terminal
-  // and desktop; the render event's own surface is used because session.start reports null for the desktop's SDK-style
-  // process). The terminal keeps the SessionMode label, so no duplicate there. Other bands (token-weather) are kept.
+  // The desktop draws the label at the left of the hint line under the prompt (user's request 2026-11-22: it showed twice,
+  // above the prompt and at the right of the footer, and the footer copy was cut off). The engine's hint stays. The
+  // render event's own surface is used because session.start reports null for the desktop's SDK-style process.
+  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
+    const text = notice ?? lasting
+    if (e.surface !== 'desktop' || !text) return next(e)
+    const inner = await next(e)
+    const { Box, Text } = $.ui.resolve(e)
+    return el(Box, { flexDirection: 'row' }, ...(inner ? [inner, el(Text, null, '  ')] : []), labelText($, e, text))
+  })
+
+  // Above the prompt (terminal and desktop): the draft's model request, like ultracode's line. Other bands
+  // (token-weather) are kept.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const inner = await next(e)
-    if (e.props.hasSurvey) return inner
-    const text = e.surface === 'desktop' ? (notice ?? lasting) : undefined
-    if (!text && !draftModel) return inner
+    if (e.props.hasSurvey || !draftModel) return inner
     const { Box, Text } = $.ui.resolve(e)
-    // Ours, right-aligned: the draft's model request (every surface, like ultracode's line) over the desktop label.
-    const rows = [
-      ...(draftModel ? [el(Text, { dimColor: true }, requestNotice(draftModel))] : []),
-      ...(text ? [labelText($, e, text)] : []),
-    ]
-    const right = el(Box, { paddingX: 1, flexDirection: 'column', alignItems: 'flex-end' }, ...rows)
+    const right = el(Box, { paddingX: 1, flexDirection: 'column', alignItems: 'flex-end' }, el(Text, { dimColor: true }, requestNotice(draftModel)))
     // Same row as the band beneath (token-weather's), ours at the far right. In a narrow window both would wrap into
-    // a mess, so ours goes on its own rows above the band. The request line needs room for its own text.
-    const need = draftModel ? BAND_COLUMNS + requestNotice(draftModel).length + 4 : SAME_ROW_COLUMNS
+    // a mess, so ours goes on its own row above the band. The request line needs room for its own text.
+    const need = BAND_COLUMNS + requestNotice(draftModel).length + 4
     if (inner && e.props.bodyColumns >= need) {
       return el(Box, { flexDirection: 'row', justifyContent: 'space-between' }, inner, right)
     }

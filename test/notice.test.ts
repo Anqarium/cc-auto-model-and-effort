@@ -48,28 +48,40 @@ describe('auto-model-effort', () => {
     expect(await plain.find({ text: /requested for this turn/ })).toBeUndefined()
     await plain.unmount()
   })
-  test('desktop: the label goes into the AbovePrompt band, other bands are kept; terminal gets none', async ($, on) => {
+  test('desktop: the label goes into the PromptHint line (left of the footer), not the band or SessionMode; terminal keeps SessionMode', async ($, on) => {
     mock.clock(on)
     on('session.start', ($, e) => ({ cwd: e.cwd }))
     on('command.register', ($, e) => ({ value: { command: e.name } }))
     on('ui.status', () => ({ value: undefined }))
     on('store.get', () => ({ value: undefined }))
-    // Stands in for another plugin's band (token-weather) beneath this one.
+    // Stands in for the engine's hint line and for another plugin's band (token-weather).
+    on('ui.render', { component: 'PromptHint' }, ($, e) => {
+      const { Text } = $.ui.resolve(e)
+      return h(Text, null, 'engine hint')
+    })
     on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
       const { Text } = $.ui.resolve(e)
       return h(Text, null, 'other band')
     })
-    const props = { hasSurvey: false, isWorking: false }
+    const bandProps = { hasSurvey: false, isWorking: false, bodyColumns: 160 }
+    const hintProps = { isDraft: false, isWorking: false, hint: '' }
 
     await $.session.start({ surface: null, isInteractive: false, cwd: '/work' })
-    const desktop = await $.ui.mount({ plugin: 'auto-model-effort', surface: 'desktop', component: 'AbovePrompt', props })
-    expect(await desktop.find({ text: /auto on/ })).toBeDefined()
-    expect(await desktop.find({ text: /other band/ })).toBeDefined()
-    await desktop.unmount()
+    const hint = await $.ui.mount({ plugin: 'auto-model-effort', surface: 'desktop', component: 'PromptHint', props: hintProps })
+    expect(await hint.find({ text: /auto on/ })).toBeDefined()
+    expect(await hint.find({ text: /engine hint/ })).toBeDefined()
+    await hint.unmount()
+    const band = await $.ui.mount({ plugin: 'auto-model-effort', surface: 'desktop', component: 'AbovePrompt', props: bandProps })
+    expect(await band.find({ text: /auto on/ })).toBeUndefined()
+    expect(await band.find({ text: /other band/ })).toBeDefined()
+    await band.unmount()
+    const mode = await $.ui.mount({ plugin: 'auto-model-effort', surface: 'desktop', component: 'SessionMode', props: { modes: [] } })
+    expect(await mode.find({ text: /auto on/ })).toBeUndefined()
+    await mode.unmount()
 
     await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
-    const terminal = await $.ui.mount({ plugin: 'auto-model-effort', surface: 'terminal', component: 'AbovePrompt', props })
-    expect(await terminal.find({ text: /auto on/ })).toBeUndefined()
-    await terminal.unmount()
+    const terminalHint = await $.ui.mount({ plugin: 'auto-model-effort', surface: 'terminal', component: 'PromptHint', props: hintProps })
+    expect(await terminalHint.find({ text: /auto on/ })).toBeUndefined()
+    await terminalHint.unmount()
   })
 })
