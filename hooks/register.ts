@@ -4,7 +4,7 @@
 import type { EngineInterface, Register, RenderElement, Timer, TurnStepChunk } from 'claude-code'
 import { MODELS, SEED_IDS, decide, effortToSend, forcedModel, learnModel, modelKeywords, withoutFable } from '../lib/select.mjs'
 import { effortsFromCatalog, idsFromCatalog } from '../lib/catalog.mjs'
-import { autoCommand, fableNotice, fallbackNotice, label, labelStyle, logSummary, modelStyle, requestNotice, statusNotice, withFableCommand } from '../lib/display.mjs'
+import { autoCommand, compactLabel, fableNotice, fallbackNotice, label, labelStyle, logSummary, modelStyle, requestNotice, statusNotice, withFableCommand } from '../lib/display.mjs'
 import { TRIAGE_HEADERS, TRIAGE_URL, parseTriageResponse, promptImages, triageBody } from '../lib/triage.mjs'
 
 // Above this many conversation tokens the model is not downgraded (the new model would rewrite the cache).
@@ -18,6 +18,12 @@ const LOG_MAX = 2000
 const NOTICE_MS = 4000
 // The Fable → Opus fallback notice stays a little longer: the user may want to press Esc or run /with-fable off.
 const FALLBACK_NOTICE_MS = 8000
+// Desktop band widths (`bodyColumns`; the proportional font makes a column narrower than a character). Measured
+// 2026-11-10: a ~770 px band reports 98-99 columns, a ~575 px one 74, and token-weather's band takes about 60 of them.
+// Below FULL_LABEL_COLUMNS the label is shortened (compactLabel); below SAME_ROW_COLUMNS (plus the request line's own
+// length when the draft names a model) it gets its own row above the band instead of sharing token-weather's.
+const FULL_LABEL_COLUMNS = 80
+const SAME_ROW_COLUMNS = 60
 
 type Decision = ReturnType<typeof decide>
 type ModelIds = Record<string, string>
@@ -174,19 +180,26 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const inner = await next(e)
     if (e.props.hasSurvey) return inner
-    const text = e.surface === 'desktop' ? (notice ?? lasting) : undefined
+    let text = e.surface === 'desktop' ? (notice ?? lasting) : undefined
     if (!text && !draftModel) return inner
     const { Box, Text } = $.ui.resolve(e)
+    // A narrow band gets the shorter label (no effort part); a notice keeps its text, it says what to type.
+    const columns = e.props.bodyColumns
+    if (text && !notice && columns < FULL_LABEL_COLUMNS) text = compactLabel(text)
     // Ours, right-aligned: the draft's model request (every surface, like ultracode's line) over the desktop label.
     const rows = [
       ...(draftModel ? [el(Text, { dimColor: true }, requestNotice(draftModel))] : []),
       ...(text ? [labelText($, e, text)] : []),
     ]
-    // Same row as the band beneath (token-weather's), at its far right; flexGrow lets ours take the rest of the row. The
-    // row wraps by layout, not by a column guess: only when ours really does not fit does it drop under the band (still
-    // right-aligned, on its own line) instead of squeezing both texts.
-    const right = el(Box, { paddingX: 1, flexGrow: 1, flexDirection: 'column', alignItems: 'flex-end' }, ...rows)
-    return el(Box, { flexDirection: 'row', flexWrap: 'wrap' }, ...(inner ? [inner] : []), right)
+    const right = el(Box, { paddingX: 1, flexDirection: 'column', alignItems: 'flex-end' }, ...rows)
+    // Same row as the band beneath (token-weather's), ours at the far right (the band shrinks for it; wrapping the row
+    // instead, v0.1.35, sent ours under the band every time because the band fills the width). Only in a very narrow
+    // window, or for the draft's longer request line without room, ours goes on its own row above the band.
+    const need = SAME_ROW_COLUMNS + (draftModel ? requestNotice(draftModel).length + 4 : 0)
+    if (inner && columns >= need) {
+      return el(Box, { flexDirection: 'row', justifyContent: 'space-between' }, inner, right)
+    }
+    return el(Box, { flexDirection: 'column' }, el(Box, { justifyContent: 'flex-end' }, right), inner)
   })
 
   // A `+name` in the draft: painted in the box and announced above it; the decision is made at turn.start.

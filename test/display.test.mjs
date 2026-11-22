@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { autoCommand, fableNotice, fallbackNotice, label, labelStyle, logSummary, modelStyle, requestNotice, statusNotice, withFableCommand } from "../lib/display.mjs";
+import { autoCommand, compactLabel, fableNotice, fallbackNotice, label, labelStyle, logSummary, modelStyle, requestNotice, statusNotice, withFableCommand } from "../lib/display.mjs";
 
 test("a forced model: label without a score, the draft's request line, the log without (null)", () => {
   const decision = { model: "claude-fable-5-2", effort: "medium", level: "forced", score: null, reason: "keyword", forced: true };
@@ -87,4 +87,10 @@ test("logSummary: distribution, actual model/cache totals, fallbacks and skipped
   assert.match(summary, /Fallbacks: 1 · Skipped: 1 · Session effort kept: 1/);
   assert.match(summary, /Sonnet 5\.5 xhigh  simple \(12\) · session effort \(mod: medium\)/);
   assert.doesNotMatch(summary, /Opus 5\.5 high .*session effort/);
+});
+
+test("compactLabel drops the effort part and keeps short labels", () => {
+  assert.equal(compactLabel("🍃 Haiku 5.5 · medium · trivial 0"), "🍃 Haiku 5.5 · trivial 0");
+  assert.equal(compactLabel("🦊 Fable 5.2 · medium · forced · short-followup"), "🦊 Fable 5.2 · forced · short-followup");
+  assert.equal(compactLabel("auto ↩ Sonnet 5.5"), "auto ↩ Sonnet 5.5");
 });
