@@ -321,7 +321,15 @@ export const register: Register = on => {
     // No response at all (the API rejected the rewritten request, or Fable's usage limit answered) and the user
     // did not interrupt: leave the rest of this prompt alone and send the request once more on the session's own model.
     const fallback = !gotContent && result.usage === null && result.stopReason === null && !next.signal.aborted
-    if (fallback) {
+    let fallbackFailed = fallback
+    if (fallback && model === MODELS.fable) {
+      // Fable has its own usage limit; Opus is the nearest model (user's choice 2026-11-22), and the rest of the
+      // prompt stays on it (the decision is not passive).
+      decision = { ...withoutFable(decision, efforts), reason: 'fable-limit' }
+      result = yield* next({ ...e, model: ids.opus ?? SEED_IDS.opus, effort: effortToSend(e.effort, decision.effort) })
+      fallbackFailed = result.usage === null && result.stopReason === null && result.answer === '' && !next.signal.aborted
+    }
+    if (fallbackFailed) {
       decision = { ...decision, passive: true, reason: 'rejected' }
       result = yield* next(e)
     }
