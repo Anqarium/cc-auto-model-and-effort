@@ -58,11 +58,15 @@ Medium is every model's default effort, so it covers the widest range; low is ne
 
 To force a specific model, type `/auto off`: routing stops for that session and your chosen model is used; `/auto on` turns it back on, `/auto` alone toggles. Every new session starts on. At startup and after `/auto`, a notice (`⚡ auto on · /auto to turn off` or `auto off · /auto to turn on`) shows for a few seconds. If a rewritten request is rejected, the same request is sent again on the session's own model.
 
-**Fable (opt-in, 4 models instead of 3):** Fable costs about twice Opus per token, so it is never used by default. Type `/with-fable` (or `/with-fable on`) to let prompts rated expert (above 65) go to Fable instead of Opus; effort is Fable's default (medium), one step up above 85. Once on, it stays on Fable in a long conversation (the same no-downgrade rule as the other models, above 30K tokens) so the cache is kept. `/with-fable off` (or `/with-fable` alone to toggle) turns it off and a standing Fable decision goes back to Opus. It applies to the current session only; every new session starts with Fable off. If your plan cannot call the newest Fable, the rejected request is sent again on the session's own model.
+**Fable (opt-in, 4 models instead of 3):** Fable costs about twice Opus per token, so it is never used by default. Type `/with-fable` (or `/with-fable on`) to let prompts rated expert (above 65) go to Fable instead of Opus; effort is Fable's default (medium), one step up above 85. Once on, it stays on Fable in a long conversation (the same no-downgrade rule as the other models, above 30K tokens) so the cache is kept. `/with-fable off` (or `/with-fable` alone to toggle) turns it off and a standing Fable decision goes back to Opus. It applies to the current session only; every new session starts with Fable off. Fable has its own usage limit: if a Fable request yields no answer (limit reached, or your plan cannot call the newest Fable), it is sent again on Opus and a notice `🦊 Fable unavailable · Opus 5.5 answers instead · Esc to cancel · /with-fable off` shows for a few seconds; the rest of that prompt stays on Opus.
 
 **Naming a model:** write `+fable`, `+opus`, `+sonnet` or `+haiku` in the prompt and that prompt goes to that model, like `ultrathink` (the Haiku rating is skipped, effort is the model's default, `+fable` works even with `/with-fable` off). While you type, the name is painted in its model's color and a line above the prompt, on the right of the band, says `Fable 5.2 requested for this turn`. A plain name without `+` ("Haiku gave the wrong answer") is only a mention and forces nothing. A follow-up such as "go on" stays on the named model; the next real prompt is rated as usual. With several names the most capable wins; `a+fable` or `+fable.md` do not count.
 
+A prompt with a screenshot never goes to Haiku (a trivial one stays on Sonnet).
+
 `/auto-log` summarizes the decisions, the model that actually answered, and cache usage.
+
+**Where the label shows:** in the terminal, right of the prompt. In the Claude desktop app's Code tab the plugin routes the same way, but the label is drawn inside the band of the token-weather plugin (a separate plugin in the same `anqarium` marketplace) when it is installed (update both together); without it, the label sits on its own row above the prompt. A Remote Control session viewed in the Claude phone app shows no plugin drawing; run `/auto-log` there instead.
 
 ## How the rating works
 
@@ -74,6 +78,21 @@ What this means for you:
 - **Privacy:** the prompt text and screenshots go to `api.anthropic.com`, the same service Claude Code already talks to, using the session's own credential. Nothing is sent anywhere else, and the plugin has no server or telemetry.
 - **Fallback:** if the Haiku call fails or returns something unusable, a local rule-based score (keywords, code and length signals) is used instead. `/auto-log` shows when that happened and why.
 - **Local data:** decisions are kept in the plugin's own store (the last 2000 requests) for `/auto-log`. They hold scores and model names, not your prompt text.
+
+## What the plugin runs and sends
+
+The plugin is one hooks module (`hooks/register.ts` with the pure logic in `lib/`), loaded by Claude Code's mod API. It runs no shell commands, scripts, package installs or subprocesses, and has no dependencies.
+
+- **Network:** one host only, `https://api.anthropic.com/v1/messages`, for the Haiku rating described above. The request carries your prompt text and its screenshots, a fixed rating instruction, and Claude Code's own identity line. It is authorized with `$.session.authorize()`, an opaque handle to the session's existing subscription credential; the plugin never sees, stores or sends the credential itself.
+- **Hooks:**
+  - `turn.start`: rates the prompt you just typed and decides model and effort.
+  - `turn.step`: on every main-conversation model request, replaces the request's model and effort with that decision and passes it on (subagent requests are left alone). It reads the response only for the model name, token usage and whether an answer arrived; if none arrived, it resends the request once (Fable → Opus, otherwise the session's own model).
+  - `session.start`: shows the startup notice.
+  - `command.run`: answers `/auto`, `/auto-log` and `/with-fable`.
+  - `prompt.edit` / `prompt.change`: paint a `+model` keyword in the draft.
+  - `ui.render` on `SessionMode` and `AbovePrompt`: draw the label.
+- **Files read:** Claude Code's model catalog cache, `<config dir>/cache/model-catalog/*.json` (the config dir is `CLAUDE_CONFIG_DIR`, else `~/.claude`, found through `HOME`/`USERPROFILE`), to learn current model ids and default efforts. Nothing is written to disk outside the plugin's own store.
+- **Shared state:** the plugin publishes its label as the state value `auto-model-effort.label` and reads `token-weather.readings` from the token-weather plugin, only to decide where to draw the label on the desktop.
 
 ## License
 
