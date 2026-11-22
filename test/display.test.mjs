@@ -14,6 +14,15 @@ test("a forced model: label without a score, the draft's request line, the log w
   assert.doesNotMatch(log, /null/);
 });
 
+test("the log shows the local clock for a UTC record time, whatever the machine's zone", () => {
+  const t = "2026-11-12T13:43:00.000Z";
+  const d = new Date(t);
+  const pad = (n) => String(n).padStart(2, "0");
+  const local = `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const log = logSummary([{ t, step: 0, model: "claude-haiku-5-5", effort: "medium", level: "trivial", score: 0, reason: "score", responseModel: "claude-haiku-5-5" }]);
+  assert.ok(log.includes(`  ${local}  Haiku 5.5 medium`), log);
+});
+
 test("label: no prefix, short; nothing shown without a decision", () => {
   assert.equal(label(null), undefined);
   const decision = { model: "claude-opus-5-5", effort: "medium", level: "complex", score: 49, reason: "score" };
