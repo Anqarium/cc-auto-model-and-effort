@@ -54,10 +54,10 @@ describe('auto-model-effort', () => {
     on('command.register', ($, e) => ({ value: { command: e.name } }))
     on('ui.status', () => ({ value: undefined }))
     on('store.get', () => ({ value: undefined }))
-    // Stands in for another plugin's band (token-weather) beneath this one.
+    // Stands in for another plugin's band (token-weather): a Box row of Texts, like the real one.
     on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
-      const { Text } = $.ui.resolve(e)
-      return h(Text, null, 'other band')
+      const { Box, Text } = $.ui.resolve(e)
+      return h(Box, { flexDirection: 'row', paddingX: 1 }, h(Text, null, 'other band'), h(Text, null, ' more'))
     })
     const bandProps = { hasSurvey: false, isWorking: false, bodyColumns: 160 }
 

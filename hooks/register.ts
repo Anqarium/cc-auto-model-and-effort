@@ -1,7 +1,7 @@
 // Claude Code mod: scores every user prompt and sends the main conversation's model requests (turn.step)
 // with the chosen model + effort. The decision logic and the display text live in pure modules under lib/
 // (lib/select.mjs, lib/display.mjs), kept out of the mod code so they can be tested with Node.
-import type { EngineInterface, Register, RenderElement, Timer, TurnStepChunk } from 'claude-code'
+import type { EngineInterface, Register, RenderElement, RenderNode, Timer, TurnStepChunk } from 'claude-code'
 import { MODELS, SEED_IDS, decide, effortToSend, forcedModel, learnModel, modelKeywords, withoutFable } from '../lib/select.mjs'
 import { effortsFromCatalog, idsFromCatalog } from '../lib/catalog.mjs'
 import { autoCommand, compactLabel, fableNotice, fallbackNotice, label, labelStyle, logSummary, modelStyle, requestNotice, statusNotice, withFableCommand } from '../lib/display.mjs'
@@ -116,6 +116,17 @@ function el(...args: Parameters<typeof h>): RenderElement {
   return h(...args) as RenderElement
 }
 
+// The band's own row with our label added as its last child (a growing spacer pushes it to the far right). The desktop
+// drew every layout that put our label NEXT to the band (row, wrapped row, absolute overlay) on a row of its own, so the
+// label goes INSIDE the band's row instead. Only a Box row whose children are a plain list qualifies; anything else
+// returns undefined and the caller falls back to a row beside the band.
+function labelInsideBand(inner: RenderNode, spacer: RenderElement, labelBox: RenderElement): RenderElement | undefined {
+  if (typeof inner !== 'object' || inner === null || inner.type !== 'Box' || !Array.isArray(inner.children)) return undefined
+  const direction = inner.props?.flexDirection
+  if (direction !== undefined && direction !== 'row') return undefined
+  return { ...inner, children: [...inner.children, spacer, labelBox] }
+}
+
 function labelText($: EngineInterface, e: Parameters<EngineInterface['ui']['resolve']>[0], text: string): RenderElement {
   const { Text } = $.ui.resolve(e)
   return !notice && lastingColor ? el(Text, { color: lastingColor, bold: lastingBold }, text) : el(Text, { dimColor: true }, text)
@@ -202,6 +213,8 @@ export const register: Register = on => {
     // `space-between` row (v0.1.36-0.1.38) and an absolute overlay (v0.1.39-0.1.41) both drew the label on a row of its own
     // on the desktop, with the band handed in and 99 columns measured. nowrap and alignItems centre keep one row.
     if (sameRow) {
+      const inside = labelInsideBand(inner, el(Box, { flexGrow: 1 }), el(Box, { flexDirection: 'column', alignItems: 'flex-end', flexShrink: 0 }, ...rows))
+      if (inside) return inside
       return el(
         Box,
         { flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center' },
