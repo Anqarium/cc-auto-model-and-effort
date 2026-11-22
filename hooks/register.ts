@@ -120,6 +120,14 @@ function el(...args: Parameters<typeof h>): RenderElement {
 // drew every layout that put our label NEXT to the band (row, wrapped row, absolute overlay) on a row of its own, so the
 // label goes INSIDE the band's row instead. Only a Box row whose children are a plain list qualifies; anything else
 // returns undefined and the caller falls back to a row beside the band.
+// TEMP diagnostic (v0.1.45): the band element's shape (type, props keys, number of children, their types).
+function innerShape(inner: RenderNode): string {
+  if (typeof inner !== 'object' || inner === null) return `[${typeof inner}]`
+  const o = inner as unknown as { type?: unknown; props?: Record<string, unknown>; children?: unknown }
+  const kids = Array.isArray(o.children) ? o.children.map(c => (typeof c === 'object' && c ? String((c as { type?: unknown }).type) : typeof c)).join('/') : String(o.children)
+  return `[${String(o.type)} p=${Object.keys(o.props ?? {}).join(',')} c=${kids}]`
+}
+
 function isBandRow(inner: RenderNode): inner is RenderElement & { type: 'Box'; children: RenderNode[] } {
   if (typeof inner !== 'object' || inner === null || inner.type !== 'Box' || !Array.isArray(inner.children)) return false
   const direction = inner.props?.flexDirection
@@ -206,7 +214,7 @@ export const register: Register = on => {
     const need = SAME_ROW_COLUMNS + (draftModel ? requestNotice(draftModel).length + 4 : 0)
     const sameRow = !!inner && columns >= need
     // TEMP diagnostic (v0.1.44): which layout drew the label (in = inside the band's row, rw = nowrap row, col = own row).
-    if (text) text += ` · ${sameRow ? (isBandRow(inner) ? 'in' : 'rw') : 'col'}`
+    if (text) text += ` · ${sameRow ? (isBandRow(inner) ? 'in' : 'rw') : 'col'} ${innerShape(inner)}`
     // Ours, right-aligned: the draft's model request (every surface, like ultracode's line) over the desktop label.
     const rows = [
       ...(draftModel ? [el(Text, { dimColor: true }, requestNotice(draftModel))] : []),
