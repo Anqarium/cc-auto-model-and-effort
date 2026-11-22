@@ -309,16 +309,18 @@ export const register: Register = on => {
     const { model, level, score, reason } = decision
     const effort = effortToSend(e.effort, decision.effort) // keeps an ultrathink turn's xhigh
     const stream = next({ ...e, model: ids[model] ?? e.model, effort })
-    let gotChunk = false
+    let gotContent = false
     for await (const chunk of stream) {
-      gotChunk = true
+      // An 'engine' chunk is opaque bookkeeping (envelope, retry marker): a Fable usage-limit reply (verified
+      // 2026-11-22) streams only one of these, with usage and stopReason null, so it must not count as a response.
+      if (chunk.kind !== 'engine') gotContent = true
       yield chunk
     }
     let result = await stream.result
 
-    // No response at all (the API rejected the rewritten request) and the user did not interrupt:
-    // leave the rest of this prompt alone and send the request once more on the session's own model.
-    const fallback = !gotChunk && result.usage === null && result.stopReason === null && !next.signal.aborted
+    // No response at all (the API rejected the rewritten request, or Fable's usage limit answered) and the user
+    // did not interrupt: leave the rest of this prompt alone and send the request once more on the session's own model.
+    const fallback = !gotContent && result.usage === null && result.stopReason === null && !next.signal.aborted
     if (fallback) {
       decision = { ...decision, passive: true, reason: 'rejected' }
       result = yield* next(e)
