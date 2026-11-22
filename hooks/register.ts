@@ -1,7 +1,7 @@
 // Claude Code mod: scores every user prompt and sends the main conversation's model requests (turn.step)
 // with the chosen model + effort. The decision logic and the display text live in pure modules under lib/
 // (lib/select.mjs, lib/display.mjs), kept out of the mod code so they can be tested with Node.
-import type { EngineInterface, Register, RenderElement, RenderNode, Timer, TurnStepChunk } from 'claude-code'
+import type { EngineInterface, Register, RenderElement, Timer, TurnStepChunk } from 'claude-code'
 import { MODELS, SEED_IDS, decide, effortToSend, forcedModel, learnModel, modelKeywords, withoutFable } from '../lib/select.mjs'
 import { effortsFromCatalog, idsFromCatalog } from '../lib/catalog.mjs'
 import { autoCommand, compactLabel, fableNotice, fallbackNotice, label, labelStyle, logSummary, modelStyle, requestNotice, statusNotice, withFableCommand } from '../lib/display.mjs'
@@ -116,28 +116,6 @@ function el(...args: Parameters<typeof h>): RenderElement {
   return h(...args) as RenderElement
 }
 
-// The band's own row with our label added as its last child (a growing spacer pushes it to the far right). The desktop
-// drew every layout that put our label NEXT to the band (row, wrapped row, absolute overlay) on a row of its own, so the
-// label goes INSIDE the band's row instead. Only a Box row whose children are a plain list qualifies; anything else
-// returns undefined and the caller falls back to a row beside the band.
-// TEMP diagnostic (v0.1.45): the band element's shape (type, props keys, number of children, their types).
-function innerShape(inner: RenderNode): string {
-  if (typeof inner !== 'object' || inner === null) return `[${typeof inner}]`
-  const o = inner as unknown as { type?: unknown; props?: Record<string, unknown>; children?: unknown }
-  const kids = Array.isArray(o.children) ? o.children.map(c => (typeof c === 'object' && c ? String((c as { type?: unknown }).type) : typeof c)).join('/') : String(o.children)
-  return `[${String(o.type)} p=${Object.keys(o.props ?? {}).join(',')} c=${kids}]`
-}
-
-function isBandRow(inner: RenderNode): inner is RenderElement & { type: 'Box'; children: RenderNode[] } {
-  if (typeof inner !== 'object' || inner === null || inner.type !== 'Box' || !Array.isArray(inner.children)) return false
-  const direction = inner.props?.flexDirection
-  return direction === undefined || direction === 'row'
-}
-
-function labelInsideBand(inner: RenderNode, spacer: RenderElement, labelBox: RenderElement): RenderElement | undefined {
-  return isBandRow(inner) ? { ...inner, children: [...inner.children, spacer, labelBox] } : undefined
-}
-
 function labelText($: EngineInterface, e: Parameters<EngineInterface['ui']['resolve']>[0], text: string): RenderElement {
   const { Text } = $.ui.resolve(e)
   return !notice && lastingColor ? el(Text, { color: lastingColor, bold: lastingBold }, text) : el(Text, { dimColor: true }, text)
@@ -213,27 +191,19 @@ export const register: Register = on => {
     if (text && !notice && columns < FULL_LABEL_COLUMNS) text = compactLabel(text)
     const need = SAME_ROW_COLUMNS + (draftModel ? requestNotice(draftModel).length + 4 : 0)
     const sameRow = !!inner && columns >= need
-    // TEMP diagnostic (v0.1.44): which layout drew the label (in = inside the band's row, rw = nowrap row, col = own row).
-    if (text) text += ` · ${sameRow ? (isBandRow(inner) ? 'in' : 'rw') : 'col'} ${innerShape(inner)}`
     // Ours, right-aligned: the draft's model request (every surface, like ultracode's line) over the desktop label.
     const rows = [
       ...(draftModel ? [el(Text, { dimColor: true }, requestNotice(draftModel))] : []),
       ...(text ? [labelText($, e, text)] : []),
     ]
     const right = el(Box, { paddingX: 1, flexDirection: 'column', alignItems: 'flex-end' }, ...rows)
-    // Same row as the band (token-weather's), ours at the far right. The band sits in a Box of its own that grows and
-    // shrinks, so the band's own full width is resolved against that Box and not against the row: a plain
-    // `space-between` row (v0.1.36-0.1.38) and an absolute overlay (v0.1.39-0.1.41) both drew the label on a row of its own
-    // on the desktop, with the band handed in and 99 columns measured. nowrap and alignItems centre keep one row.
+    // The band beneath is an opaque engine node (type `engine`, no props or children; a v0.1.44-0.1.45 diagnostic showed
+    // it), so the label cannot be added to its row, and every flex layout beside it (row, wrapped, nowrap, v0.1.36-0.1.43)
+    // drew the label on a row above it. So the label is positioned over the band's row instead, anchored to the bottom of
+    // the box that holds the band: the band's text is the lowest row there (the grey box has a spare row above it that
+    // top and centre anchoring, v0.1.39-0.1.41, landed in). `position` must not sit on the Box that holds the engine node.
     if (sameRow) {
-      const inside = labelInsideBand(inner, el(Box, { flexGrow: 1 }), el(Box, { flexDirection: 'column', alignItems: 'flex-end', flexShrink: 0 }, ...rows))
-      if (inside) return inside
-      return el(
-        Box,
-        { flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center' },
-        el(Box, { flexGrow: 1, flexShrink: 1 }, inner),
-        el(Box, { flexShrink: 0 }, right),
-      )
+      return el(Box, { flexDirection: 'column' }, inner, el(Box, { position: 'absolute', bottom: 0, right: 0 }, right))
     }
     return el(Box, { flexDirection: 'column' }, el(Box, { justifyContent: 'flex-end' }, right), inner)
   })
