@@ -202,8 +202,9 @@ export const register: Register = on => {
     // band handed in and 99 columns measured). A tree wider than the band is no problem there: the band hides its
     // sparkline and trend itself below 66 and 88 columns.
     if (sameRow && !draftModel) {
+      // The positioned Box spans the band's height and centres the label (at `top: 0` alone it sat half a row above the band's text).
       // No `position` on the Box that holds the band: the validator refuses an engine node under a positioned Box.
-      return el(Box, { flexDirection: 'column' }, inner, el(Box, { position: 'absolute', top: 0, right: 0 }, right))
+      return el(Box, { flexDirection: 'column' }, inner, el(Box, { position: 'absolute', top: 0, bottom: 0, right: 0, flexDirection: 'column', justifyContent: 'center' }, right))
     }
     // With the draft's request line (several rows) the old flex row, when it fits; else its own rows above the band.
     if (sameRow) return el(Box, { flexDirection: 'row', justifyContent: 'space-between' }, inner, right)
