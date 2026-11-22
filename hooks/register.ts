@@ -120,11 +120,14 @@ function el(...args: Parameters<typeof h>): RenderElement {
 // drew every layout that put our label NEXT to the band (row, wrapped row, absolute overlay) on a row of its own, so the
 // label goes INSIDE the band's row instead. Only a Box row whose children are a plain list qualifies; anything else
 // returns undefined and the caller falls back to a row beside the band.
-function labelInsideBand(inner: RenderNode, spacer: RenderElement, labelBox: RenderElement): RenderElement | undefined {
-  if (typeof inner !== 'object' || inner === null || inner.type !== 'Box' || !Array.isArray(inner.children)) return undefined
+function isBandRow(inner: RenderNode): inner is RenderElement & { type: 'Box'; children: RenderNode[] } {
+  if (typeof inner !== 'object' || inner === null || inner.type !== 'Box' || !Array.isArray(inner.children)) return false
   const direction = inner.props?.flexDirection
-  if (direction !== undefined && direction !== 'row') return undefined
-  return { ...inner, children: [...inner.children, spacer, labelBox] }
+  return direction === undefined || direction === 'row'
+}
+
+function labelInsideBand(inner: RenderNode, spacer: RenderElement, labelBox: RenderElement): RenderElement | undefined {
+  return isBandRow(inner) ? { ...inner, children: [...inner.children, spacer, labelBox] } : undefined
 }
 
 function labelText($: EngineInterface, e: Parameters<EngineInterface['ui']['resolve']>[0], text: string): RenderElement {
@@ -202,6 +205,8 @@ export const register: Register = on => {
     if (text && !notice && columns < FULL_LABEL_COLUMNS) text = compactLabel(text)
     const need = SAME_ROW_COLUMNS + (draftModel ? requestNotice(draftModel).length + 4 : 0)
     const sameRow = !!inner && columns >= need
+    // TEMP diagnostic (v0.1.44): which layout drew the label (in = inside the band's row, rw = nowrap row, col = own row).
+    if (text) text += ` · ${sameRow ? (isBandRow(inner) ? 'in' : 'rw') : 'col'}`
     // Ours, right-aligned: the draft's model request (every surface, like ultracode's line) over the desktop label.
     const rows = [
       ...(draftModel ? [el(Text, { dimColor: true }, requestNotice(draftModel))] : []),
