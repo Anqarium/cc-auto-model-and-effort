@@ -189,6 +189,8 @@ export const register: Register = on => {
     const measured = e.props.bodyColumns ?? e.viewport?.columns
     const columns = typeof measured === 'number' && Number.isFinite(measured) ? measured : Infinity
     if (text && !notice && columns < FULL_LABEL_COLUMNS) text = compactLabel(text)
+    // TEMP diagnostic (v0.1.38): what the desktop really hands this hook. Remove once the band layout is fixed.
+    if (text) text += ` · dbg inner=${inner ? 'yes' : 'no'} body=${String(e.props.bodyColumns)} vp=${String(e.viewport?.columns)}`
     // Ours, right-aligned: the draft's model request (every surface, like ultracode's line) over the desktop label.
     const rows = [
       ...(draftModel ? [el(Text, { dimColor: true }, requestNotice(draftModel))] : []),
