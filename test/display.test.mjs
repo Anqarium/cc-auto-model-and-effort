@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { autoCommand, fableNotice, label, labelStyle, logSummary, modelStyle, requestNotice, statusNotice, withFableCommand } from "../lib/display.mjs";
+import { autoCommand, fableNotice, fallbackNotice, label, labelStyle, logSummary, modelStyle, requestNotice, statusNotice, withFableCommand } from "../lib/display.mjs";
 
 test("a forced model: label without a score, the draft's request line, the log without (null)", () => {
   const decision = { model: "claude-fable-5-2", effort: "medium", level: "forced", score: null, reason: "keyword", forced: true };
@@ -67,6 +67,7 @@ test("withFableCommand: toggles like /auto, unknown keeps the state; Fable ids a
   assert.doesNotMatch(withFableCommand("on", false).message, /auto-model-effort/);
   assert.equal(fableNotice(true), "🦊 Fable on · /with-fable to turn off");
   assert.equal(fableNotice(false), "Fable off · /with-fable to turn on");
+  assert.equal(fallbackNotice("claude-opus-5-5"), "🦊 Fable unavailable · Opus 5.5 answers instead · Esc to cancel · /with-fable off");
   const decision = { model: "claude-fable-5-2", effort: "medium", level: "expert", score: 80, reason: "score" };
   assert.equal(label({ decision }), "🦊 Fable 5.2 · medium · expert 80");
 });

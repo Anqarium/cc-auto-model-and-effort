@@ -4,7 +4,7 @@
 import type { EngineInterface, Register, RenderElement, Timer } from 'claude-code'
 import { MODELS, SEED_IDS, decide, effortToSend, forcedModel, learnModel, modelKeywords, withoutFable } from '../lib/select.mjs'
 import { effortsFromCatalog, idsFromCatalog } from '../lib/catalog.mjs'
-import { autoCommand, fableNotice, label, labelStyle, logSummary, modelStyle, requestNotice, statusNotice, withFableCommand } from '../lib/display.mjs'
+import { autoCommand, fableNotice, fallbackNotice, label, labelStyle, logSummary, modelStyle, requestNotice, statusNotice, withFableCommand } from '../lib/display.mjs'
 import { TRIAGE_HEADERS, TRIAGE_URL, parseTriageResponse, promptImages, triageBody } from '../lib/triage.mjs'
 
 // Above this many conversation tokens the model is not downgraded (the new model would rewrite the cache).
@@ -16,6 +16,8 @@ const LOG_KEY = 'decisions'
 const LOG_MAX = 2000
 // How long the status notice stays at startup and after /auto.
 const NOTICE_MS = 4000
+// The Fable → Opus fallback notice stays a little longer: the user may want to press Esc or run /with-fable off.
+const FALLBACK_NOTICE_MS = 8000
 // Band width (columns) from which the desktop label shares token-weather's row; below it it gets its own row.
 // Measured on the desktop (2026-11-10, recorded `bodyColumns`): a ~770 px band reports 98-99 columns and fits both on
 // one row with room to spare, a ~575 px band reports 74 and does not. The desktop's proportional font makes a column
@@ -136,10 +138,10 @@ function keywordPaint(text: string) {
   return modelKeywords(text).map(w => ({ start: w.start, end: w.end, color: modelStyle(w.family).color ?? 'claude', bold: true }))
 }
 
-function notify($: EngineInterface, text: string) {
+function notify($: EngineInterface, text: string, ms: number = NOTICE_MS) {
   noticeTimer?.cancel()
   notice = text
-  noticeTimer = $.clock.after(NOTICE_MS, () => {
+  noticeTimer = $.clock.after(ms, () => {
     notice = undefined
     $.ui.invalidate('ui.render')
   })
@@ -322,11 +324,16 @@ export const register: Register = on => {
     // did not interrupt: leave the rest of this prompt alone and send the request once more on the session's own model.
     const fallback = !gotContent && result.usage === null && result.stopReason === null && !next.signal.aborted
     let fallbackFailed = fallback
+    // What the log records: the first choice, or Opus when a Fable request fell back to it.
+    let logged = { model, effort, reason, chosen: decision.effort }
     if (fallback && model === MODELS.fable) {
       // Fable has its own usage limit; Opus is the nearest model (user's choice 2026-11-22), and the rest of the
-      // prompt stays on it (the decision is not passive).
+      // prompt stays on it (the decision is not passive). A short notice lets the user cancel (Esc) or turn Fable off.
       decision = { ...withoutFable(decision, efforts), reason: 'fable-limit' }
-      result = yield* next({ ...e, model: ids.opus ?? SEED_IDS.opus, effort: effortToSend(e.effort, decision.effort) })
+      const opusEffort = effortToSend(e.effort, decision.effort)
+      logged = { model: decision.model, effort: opusEffort, reason: decision.reason, chosen: decision.effort }
+      notify($, fallbackNotice(ids.opus ?? SEED_IDS.opus), FALLBACK_NOTICE_MS)
+      result = yield* next({ ...e, model: ids.opus ?? SEED_IDS.opus, effort: opusEffort })
       fallbackFailed = result.usage === null && result.stopReason === null && result.answer === '' && !next.signal.aborted
     }
     if (fallbackFailed) {
@@ -339,14 +346,14 @@ export const register: Register = on => {
     show($, { decision, responseModel: u?.model, sentEffort: fallback ? undefined : effort })
     await record($, {
       step: e.index,
-      model,
-      effort,
+      model: logged.model,
+      effort: logged.effort,
       level,
       score,
-      reason,
+      reason: logged.reason,
       ...(e.index === 0 && triageNote ? { triageNote } : {}),
       ...(e.index === 0 && imageCount ? { images: imageCount } : {}),
-      ...(effort !== decision.effort ? { chosenEffort: decision.effort } : {}), // session's xhigh/max kept
+      ...(logged.effort !== logged.chosen ? { chosenEffort: logged.chosen } : {}), // session's xhigh/max kept
       responseModel: u?.model,
       cacheWrite: u?.cache_creation_input_tokens,
       cacheRead: u?.cache_read_input_tokens,
