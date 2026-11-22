@@ -197,17 +197,18 @@ export const register: Register = on => {
       ...(text ? [labelText($, e, text)] : []),
     ]
     const right = el(Box, { paddingX: 1, flexDirection: 'column', alignItems: 'flex-end' }, ...rows)
-    // The label alone goes OVER the band's row at its far right (position absolute): token-weather's band fills the
-    // width, so a flex row or wrap put the label on a row of its own on the desktop (v0.1.35-0.1.38 screenshots, with the
-    // band handed in and 99 columns measured). A tree wider than the band is no problem there: the band hides its
-    // sparkline and trend itself below 66 and 88 columns.
-    if (sameRow && !draftModel) {
-      // The positioned Box spans the band's height and centres the label (at `top: 0` alone it sat half a row above the band's text).
-      // No `position` on the Box that holds the band: the validator refuses an engine node under a positioned Box.
-      return el(Box, { flexDirection: 'column' }, inner, el(Box, { position: 'absolute', top: 0, bottom: 0, right: 0, flexDirection: 'column', justifyContent: 'center' }, right))
+    // Same row as the band (token-weather's), ours at the far right. The band sits in a Box of its own that grows and
+    // shrinks, so the band's own full width is resolved against that Box and not against the row: a plain
+    // `space-between` row (v0.1.36-0.1.38) and an absolute overlay (v0.1.39-0.1.41) both drew the label on a row of its own
+    // on the desktop, with the band handed in and 99 columns measured. nowrap and alignItems centre keep one row.
+    if (sameRow) {
+      return el(
+        Box,
+        { flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center' },
+        el(Box, { flexGrow: 1, flexShrink: 1 }, inner),
+        el(Box, { flexShrink: 0 }, right),
+      )
     }
-    // With the draft's request line (several rows) the old flex row, when it fits; else its own rows above the band.
-    if (sameRow) return el(Box, { flexDirection: 'row', justifyContent: 'space-between' }, inner, right)
     return el(Box, { flexDirection: 'column' }, el(Box, { justifyContent: 'flex-end' }, right), inner)
   })
 
