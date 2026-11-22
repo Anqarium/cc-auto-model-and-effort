@@ -18,10 +18,6 @@ const LOG_MAX = 2000
 const NOTICE_MS = 4000
 // The Fable → Opus fallback notice stays a little longer: the user may want to press Esc or run /with-fable off.
 const FALLBACK_NOTICE_MS = 8000
-// Columns token-weather's band takes, measured on the desktop (2026-11-10, recorded `bodyColumns`: a ~770 px band
-// reports 98-99 columns, a ~575 px one 74; the proportional font makes a column narrower than a character). The draft's
-// request line shares the band's row only from BAND_COLUMNS + its own length, else it gets its own row above.
-const BAND_COLUMNS = 60
 
 type Decision = ReturnType<typeof decide>
 type ModelIds = Record<string, string>
@@ -171,31 +167,26 @@ export const register: Register = on => {
     return el(Box, { flexDirection: 'row' }, await next(e), el(Text, { dimColor: true }, ' & '), mine)
   })
 
-  // The desktop draws the label at the left of the hint line under the prompt (user's request 2026-11-22: it showed twice,
-  // above the prompt and at the right of the footer, and the footer copy was cut off). The engine's hint stays. The
-  // render event's own surface is used because session.start reports null for the desktop's SDK-style process.
-  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
-    const text = notice ?? lasting
-    if (e.surface !== 'desktop' || !text) return next(e)
-    const inner = await next(e)
-    const { Box, Text } = $.ui.resolve(e)
-    return el(Box, { flexDirection: 'row' }, ...(inner ? [inner, el(Text, null, '  ')] : []), labelText($, e, text))
-  })
-
-  // Above the prompt (terminal and desktop): the draft's model request, like ultracode's line. Other bands
-  // (token-weather) are kept.
+  // The desktop draws SessionMode too, but the label there was cut off and doubled the band's copy, so on the desktop it
+  // goes only into the AbovePrompt band (PromptHint, at the left of the footer, was tried in v0.1.34: the desktop does not
+  // draw it). The render event's own surface is used because session.start reports null for the desktop's SDK-style
+  // process. The terminal keeps SessionMode. Other bands (token-weather) are kept.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const inner = await next(e)
-    if (e.props.hasSurvey || !draftModel) return inner
+    if (e.props.hasSurvey) return inner
+    const text = e.surface === 'desktop' ? (notice ?? lasting) : undefined
+    if (!text && !draftModel) return inner
     const { Box, Text } = $.ui.resolve(e)
-    const right = el(Box, { paddingX: 1, flexDirection: 'column', alignItems: 'flex-end' }, el(Text, { dimColor: true }, requestNotice(draftModel)))
-    // Same row as the band beneath (token-weather's), ours at the far right. In a narrow window both would wrap into
-    // a mess, so ours goes on its own row above the band. The request line needs room for its own text.
-    const need = BAND_COLUMNS + requestNotice(draftModel).length + 4
-    if (inner && e.props.bodyColumns >= need) {
-      return el(Box, { flexDirection: 'row', justifyContent: 'space-between' }, inner, right)
-    }
-    return el(Box, { flexDirection: 'column' }, el(Box, { justifyContent: 'flex-end' }, right), inner)
+    // Ours, right-aligned: the draft's model request (every surface, like ultracode's line) over the desktop label.
+    const rows = [
+      ...(draftModel ? [el(Text, { dimColor: true }, requestNotice(draftModel))] : []),
+      ...(text ? [labelText($, e, text)] : []),
+    ]
+    // Same row as the band beneath (token-weather's), at its far right; flexGrow lets ours take the rest of the row. The
+    // row wraps by layout, not by a column guess: only when ours really does not fit does it drop under the band (still
+    // right-aligned, on its own line) instead of squeezing both texts.
+    const right = el(Box, { paddingX: 1, flexGrow: 1, flexDirection: 'column', alignItems: 'flex-end' }, ...rows)
+    return el(Box, { flexDirection: 'row', flexWrap: 'wrap' }, ...(inner ? [inner] : []), right)
   })
 
   // A `+name` in the draft: painted in the box and announced above it; the decision is made at turn.start.
