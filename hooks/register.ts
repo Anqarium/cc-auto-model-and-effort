@@ -1,7 +1,7 @@
 // Claude Code mod: scores every user prompt and sends the main conversation's model requests (turn.step)
 // with the chosen model + effort. The decision logic and the display text live in pure modules under lib/
 // (lib/select.mjs, lib/display.mjs), kept out of the mod code so they can be tested with Node.
-import type { EngineInterface, Register, RenderElement, Timer } from 'claude-code'
+import type { EngineInterface, Register, RenderElement, Timer, TurnStepChunk } from 'claude-code'
 import { MODELS, SEED_IDS, decide, effortToSend, forcedModel, learnModel, modelKeywords, withoutFable } from '../lib/select.mjs'
 import { effortsFromCatalog, idsFromCatalog } from '../lib/catalog.mjs'
 import { autoCommand, fableNotice, fallbackNotice, label, labelStyle, logSummary, modelStyle, requestNotice, statusNotice, withFableCommand } from '../lib/display.mjs'
@@ -312,10 +312,21 @@ export const register: Register = on => {
     const effort = effortToSend(e.effort, decision.effort) // keeps an ultrathink turn's xhigh
     const stream = next({ ...e, model: ids[model] ?? e.model, effort })
     let gotContent = false
+    // An 'engine' chunk is opaque bookkeeping (envelope, retry marker): a Fable usage-limit reply (verified
+    // 2026-11-22) streams only one of these, with usage and stopReason null, so it must not count as a response.
+    // They are held back until the first content chunk, so that a failed attempt's chunk (it drew a red "out of
+    // usage credits" line above the Opus answer, seen 2026-11-22) can be dropped when the request is retried.
+    const held: TurnStepChunk[] = []
     for await (const chunk of stream) {
-      // An 'engine' chunk is opaque bookkeeping (envelope, retry marker): a Fable usage-limit reply (verified
-      // 2026-11-22) streams only one of these, with usage and stopReason null, so it must not count as a response.
-      if (chunk.kind !== 'engine') gotContent = true
+      if (chunk.kind === 'engine' && !gotContent) {
+        held.push(chunk)
+        continue
+      }
+      if (!gotContent) {
+        gotContent = true
+        for (const h of held) yield h
+        held.length = 0
+      }
       yield chunk
     }
     let result = await stream.result
@@ -323,6 +334,7 @@ export const register: Register = on => {
     // No response at all (the API rejected the rewritten request, or Fable's usage limit answered) and the user
     // did not interrupt: leave the rest of this prompt alone and send the request once more on the session's own model.
     const fallback = !gotContent && result.usage === null && result.stopReason === null && !next.signal.aborted
+    if (!fallback) for (const h of held) yield h // an empty but real response (or Esc) keeps its chunks
     let fallbackFailed = fallback
     // What the log records: the first choice, or Opus when a Fable request fell back to it.
     let logged = { model, effort, reason, chosen: decision.effort }
