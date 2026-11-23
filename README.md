@@ -105,5 +105,3 @@ node --test test/*.test.mjs
 claude plugin test .
 claude plugin validate .
 ```
-
-See `CLAUDE.md` for the architecture, risks, and the approaches that were tried.

@@ -1,6 +1,6 @@
 # Mod surface (compact map for the weekly release check)
 
-Purpose: the weekly cloud routine "Claude Code ve Desktop sürüm takibi" reads THIS file instead of `lib/` and `hooks/register.ts` (about 12k tokens of code) to judge release notes. Keep it short and current: update it in the same commit whenever a hook, a `$.` call or a Claude Code internal the mod relies on is added or removed. Details live in `CLAUDE.md`; this file only lists what could break or what a release could improve.
+Purpose: the weekly cloud routine "Claude Code ve Desktop sürüm takibi" reads THIS file instead of `lib/` and `hooks/register.ts` (about 12k tokens of code) to judge release notes. Keep it short and current: update it in the same commit whenever a hook, a `$.` call or a Claude Code internal the mod relies on is added or removed. This file only lists what could break or what a release could improve.
 
 ## What the mod does
 
