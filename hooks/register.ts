@@ -96,13 +96,20 @@ let lasting: string | undefined
 let lastingColor: string | undefined
 let lastingBold = false
 let notice: string | undefined
+// A decision's detail line keeps the model's color; other notices (on/off, fallback) stay dim.
+let noticeColored = false
 let noticeTimer: Timer | undefined
 
 // The label as token-weather draws it on the desktop: published to $.state whenever the label or a notice changes
 // (the state may not be written while a ui.render hook draws, so this runs from the events that change it).
+// Whether what is drawn now takes the model's color: the lasting label, or a decision's detail notice.
+function colored() {
+  return !!lastingColor && (!notice || noticeColored)
+}
+
 function publishLabel($: EngineInterface) {
   const text = notice ?? lasting
-  const value = text ? { text, ...(!notice && lastingColor ? { color: lastingColor, bold: lastingBold } : {}) } : null
+  const value = text ? { text, ...(colored() ? { color: lastingColor, bold: lastingBold } : {}) } : null
   $.state.set(modeLabel, value).catch(err => $.ui.log(`auto-model-effort: the label state was not written: ${String(err)}`))
 }
 
@@ -114,12 +121,12 @@ function show($: EngineInterface, d: Parameters<typeof label>[0], detail = false
   lastingColor = style.color
   lastingBold = !!style.bold
   const full = detail ? labelDetail(d) : undefined
-  if (full && full !== lasting) return notify($, full)
+  if (full && full !== lasting) return notify($, full, NOTICE_MS, true)
   publishLabel($)
   $.ui.invalidate('ui.render')
 }
 
-// The label as drawn: in the model's color (bold for Opus and Fable), dim otherwise (the notice is always dim).
+// The label as drawn: in the model's color (bold for Opus and Fable), dim otherwise (a notice is dim, except a decision's detail line).
 // The JSX factory `h` is typed as returning a RenderNode (it may yield a plain string or nothing), but a `ui.render`
 // hook must return a RenderElement. Every element built here is one, so this narrows the type.
 function el(...args: Parameters<typeof h>): RenderElement {
@@ -128,7 +135,7 @@ function el(...args: Parameters<typeof h>): RenderElement {
 
 function labelText($: EngineInterface, e: Parameters<EngineInterface['ui']['resolve']>[0], text: string): RenderElement {
   const { Text } = $.ui.resolve(e)
-  return !notice && lastingColor ? el(Text, { color: lastingColor, bold: lastingBold }, text) : el(Text, { dimColor: true }, text)
+  return colored() ? el(Text, { color: lastingColor, bold: lastingBold }, text) : el(Text, { dimColor: true }, text)
 }
 
 // While the draft names a model with a `+` ("+fable", "+opus"...), a line above the prompt says that model will
@@ -146,11 +153,13 @@ function keywordPaint(text: string) {
   return modelKeywords(text).map(w => ({ start: w.start, end: w.end, color: modelStyle(w.family).color ?? 'claude', bold: true }))
 }
 
-function notify($: EngineInterface, text: string, ms: number = NOTICE_MS) {
+function notify($: EngineInterface, text: string, ms: number = NOTICE_MS, keepColor = false) {
   noticeTimer?.cancel()
   notice = text
+  noticeColored = keepColor
   noticeTimer = $.clock.after(ms, () => {
     notice = undefined
+    noticeColored = false
     publishLabel($)
     $.ui.invalidate('ui.render')
   })
@@ -178,7 +187,7 @@ export const register: Register = on => {
     // The desktop draws the label inside token-weather's band (or above the band below), not here at the right.
     if (!text || e.surface === 'desktop') return next(e)
     // A plain label joins the engine's dim modes; a styled one (Fable, Opus) is drawn by us, after the other modes.
-    if (notice || !lastingColor) return next({ ...e, props: { ...e.props, modes: [...e.props.modes, text] } })
+    if (!colored()) return next({ ...e, props: { ...e.props, modes: [...e.props.modes, text] } })
     const mine = labelText($, e, text)
     if (!e.props.modes.length) return mine
     const { Box, Text } = $.ui.resolve(e)
