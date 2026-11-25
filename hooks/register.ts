@@ -4,7 +4,7 @@
 import type { EngineInterface, Register, RenderElement, Timer, TurnStepChunk } from 'claude-code'
 import { MODELS, SEED_IDS, decide, effortToSend, forcedModel, learnModel, modelKeywords, withoutFable } from '../lib/select.mjs'
 import { effortsFromCatalog, idsFromCatalog } from '../lib/catalog.mjs'
-import { autoCommand, fableNotice, fallbackNotice, label, labelStyle, logSummary, modelStyle, requestNotice, statusNotice, withFableCommand } from '../lib/display.mjs'
+import { autoCommand, fableNotice, fallbackNotice, label, labelDetail, labelStyle, logSummary, modelStyle, requestNotice, statusNotice, withFableCommand } from '../lib/display.mjs'
 import { TRIAGE_HEADERS, TRIAGE_URL, parseTriageResponse, promptImages, triageBody } from '../lib/triage.mjs'
 
 // Above this many conversation tokens the model is not downgraded (the new model would rewrite the cache).
@@ -106,11 +106,15 @@ function publishLabel($: EngineInterface) {
   $.state.set(modeLabel, value).catch(err => $.ui.log(`auto-model-effort: the label state was not written: ${String(err)}`))
 }
 
-function show($: EngineInterface, d: Parameters<typeof label>[0]) {
+// `detail`: after a decision, the full line (level, score, reason) is shown for NOTICE_MS in place of the lasting
+// label, which only names the model and effort (user's request 2026-11-25: the lasting label was crowded).
+function show($: EngineInterface, d: Parameters<typeof label>[0], detail = false) {
   lasting = label(d)
   const style = labelStyle(d)
   lastingColor = style.color
   lastingBold = !!style.bold
+  const full = detail ? labelDetail(d) : undefined
+  if (full && full !== lasting) return notify($, full)
   publishLabel($)
   $.ui.invalidate('ui.render')
 }
@@ -300,7 +304,7 @@ export const register: Register = on => {
         efforts,
         fable: withFable,
       })
-      show($, { decision })
+      show($, { decision }, true)
     }
     return next(e)
   })
@@ -362,7 +366,7 @@ export const register: Register = on => {
 
     const u = result.usage
     ids = await remember($, ids, u?.model)
-    show($, { decision, responseModel: u?.model, sentEffort: fallback ? undefined : effort })
+    show($, { decision, responseModel: u?.model, sentEffort: fallback ? undefined : effort }, true)
     await record($, {
       step: e.index,
       model: logged.model,

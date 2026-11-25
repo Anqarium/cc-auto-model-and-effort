@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { autoCommand, fableNotice, fallbackNotice, label, labelStyle, logSummary, modelStyle, requestNotice, statusNotice, withFableCommand } from "../lib/display.mjs";
+import { autoCommand, fableNotice, fallbackNotice, label, labelDetail, labelStyle, logSummary, modelStyle, requestNotice, statusNotice, withFableCommand } from "../lib/display.mjs";
 
 test("a forced model: label without a score, the draft's request line, the log without (null)", () => {
   const decision = { model: "claude-fable-5-2", effort: "medium", level: "forced", score: null, reason: "keyword", forced: true };
-  assert.equal(label({ decision }), "🦊 Fable 5.2 · medium · forced");
-  assert.equal(label({ decision: { ...decision, reason: "short-followup" } }), "🦊 Fable 5.2 · medium · forced · short-followup");
+  assert.equal(label({ decision }), "🦊 Fable 5.2 · medium");
+  assert.equal(labelDetail({ decision }), "🦊 Fable 5.2 · medium · forced");
+  assert.equal(labelDetail({ decision: { ...decision, reason: "short-followup" } }), "🦊 Fable 5.2 · medium · forced · short-followup");
   assert.equal(requestNotice("claude-fable-5-2"), "Fable 5.2 requested for this turn");
   assert.equal(modelStyle("fable").color, "merged");
   assert.deepEqual(modelStyle("unknown"), {});
@@ -23,15 +24,18 @@ test("the log shows the local clock for a UTC record time, whatever the machine'
   assert.ok(log.includes(`  ${local}  Haiku 5.5 medium`), log);
 });
 
-test("label: no prefix, short; nothing shown without a decision", () => {
+test("label: only model and effort, no prefix; the details come from labelDetail; nothing without a decision", () => {
   assert.equal(label(null), undefined);
+  assert.equal(labelDetail(null), undefined);
   const decision = { model: "claude-opus-5-5", effort: "medium", level: "complex", score: 49, reason: "score" };
-  assert.equal(label({ decision }), "🎼 Opus 5.5 · medium · complex 49");
-  assert.equal(label({ decision, responseModel: "claude-haiku-5-5" }), "🍃 Haiku 5.5 · medium · complex 49");
-  assert.equal(label({ decision, responseModel: "claude-sonnet-5-5" }), "🪶 Sonnet 5.5 · medium · complex 49");
-  assert.equal(label({ decision, responseModel: "some-other-model" }), "⚡ some-other-model · medium · complex 49");
-  assert.equal(label({ decision, responseModel: "claude-opus-5-5", sentEffort: "xhigh" }), "🎼 Opus 5.5 · xhigh · complex 49");
-  assert.equal(label({ decision: { ...decision, reason: "short-followup" } }), "🎼 Opus 5.5 · medium · complex 49 · short-followup");
+  assert.equal(label({ decision }), "🎼 Opus 5.5 · medium");
+  assert.equal(labelDetail({ decision }), "🎼 Opus 5.5 · medium · complex 49");
+  assert.equal(label({ decision, responseModel: "claude-haiku-5-5" }), "🍃 Haiku 5.5 · medium");
+  assert.equal(label({ decision, responseModel: "claude-sonnet-5-5" }), "🪶 Sonnet 5.5 · medium");
+  assert.equal(label({ decision, responseModel: "some-other-model" }), "⚡ some-other-model · medium");
+  assert.equal(label({ decision, responseModel: "claude-opus-5-5", sentEffort: "xhigh" }), "🎼 Opus 5.5 · xhigh");
+  assert.equal(label({ decision: { ...decision, reason: "short-followup" } }), "🎼 Opus 5.5 · medium");
+  assert.equal(labelDetail({ decision: { ...decision, reason: "short-followup" } }), "🎼 Opus 5.5 · medium · complex 49 · short-followup");
   // The style follows the model that answered: Opus decided, Haiku answered → Haiku's.
   assert.deepEqual(labelStyle({ decision }), { icon: "🎼", color: "warning", bold: true });
   assert.deepEqual(labelStyle({ decision, responseModel: "claude-haiku-5-5" }), { icon: "🍃", color: "success" });
@@ -39,6 +43,7 @@ test("label: no prefix, short; nothing shown without a decision", () => {
   assert.deepEqual(labelStyle({ decision: { passive: true }, responseModel: "claude-opus-5-5" }), {});
   assert.equal(labelStyle({ decision: { model: "fable" } }).color, "merged");
   assert.equal(label({ decision: { passive: true, reason: "rejected" }, responseModel: "claude-sonnet-5-5" }), "auto ↩ Sonnet 5.5");
+  assert.equal(labelDetail({ decision: { passive: true, reason: "rejected" }, responseModel: "claude-sonnet-5-5" }), "auto ↩ Sonnet 5.5");
 });
 
 test("statusNotice: on/off and how to change it", () => {
@@ -69,7 +74,7 @@ test("withFableCommand: toggles like /auto, unknown keeps the state; Fable ids a
   assert.equal(fableNotice(false), "Fable off · /with-fable to turn on");
   assert.equal(fallbackNotice("claude-opus-5-5"), "🦊 Fable unavailable · Opus 5.5 answers instead · Esc to cancel · /with-fable off");
   const decision = { model: "claude-fable-5-2", effort: "medium", level: "expert", score: 80, reason: "score" };
-  assert.equal(label({ decision }), "🦊 Fable 5.2 · medium · expert 80");
+  assert.equal(labelDetail({ decision }), "🦊 Fable 5.2 · medium · expert 80");
 });
 
 test("logSummary: distribution, actual model/cache totals, fallbacks and skipped", () => {
